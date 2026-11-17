@@ -1,6 +1,7 @@
 "use server";
 
 import { after } from "next/server";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { hasActiveAccess } from "@/lib/billing";
@@ -82,6 +83,38 @@ function fail(e: unknown): ScanResult {
   return { ok: false, error: "Ocurrió un error. Intenta de nuevo." };
 }
 
+/** Acepta solo claves con la forma que genera el escáner (UUID u otra cadena corta sin espacios). */
+const cleanId = (id: unknown): string | null => (typeof id === "string" && /^[\w-]{8,64}$/.test(id) ? id : null);
+
+const isDuplicateRequest = (e: unknown) =>
+  e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002" && String(e.meta?.target ?? "").includes("requestId");
+
+/**
+ * Si el escáner reintenta un movimiento que ya quedó registrado (misma clave), devuelve ese
+ * registro en lugar de aplicarlo otra vez.
+ */
+async function replay(businessId: string, requestId?: string | null): Promise<ScanResult | null> {
+  if (!requestId) return null;
+  const prev = await db.transaction.findUnique({ where: { requestId } });
+  if (!prev || prev.businessId !== businessId) return null;
+  return { ok: true, data: await cardData(prev.cardId), message: `Ya estaba registrado: ${prev.description}` };
+}
+
+/** Corre un movimiento con su clave; un duplicado concurrente se resuelve con el registro existente. */
+async function once(businessId: string, requestId: string | null | undefined, run: () => Promise<ScanResult>): Promise<ScanResult> {
+  const prev = await replay(businessId, requestId);
+  if (prev) return prev;
+  try {
+    return await run();
+  } catch (e) {
+    if (isDuplicateRequest(e)) {
+      const again = await replay(businessId, requestId);
+      if (again) return again;
+    }
+    throw e;
+  }
+}
+
 export async function lookupAction(raw: string): Promise<ScanResult> {
   try {
     const user = await staff();
@@ -126,21 +159,33 @@ export async function lookupAction(raw: string): Promise<ScanResult> {
   }
 }
 
+export type CustomerMatch = { name: string; phone: string | null; serial: string };
+export type SearchResult = { ok: true; customers: CustomerMatch[] } | { ok: false; error: string };
+
 /** Búsqueda por teléfono o nombre cuando el cliente no trae su tarjeta. */
-export async function searchCustomersAction(q: string) {
-  const user = await staff();
-  const term = q.trim();
-  if (term.length < 3) return [];
-  const digits = term.replace(/\D/g, "");
-  const customers = await db.customer.findMany({
-    where: {
-      businessId: user.business.id,
-      OR: [{ name: { contains: term, mode: "insensitive" } }, ...(digits.length >= 4 ? [{ phone: { contains: digits } }] : [])],
-    },
-    include: { card: true },
-    take: 8,
-  });
-  return customers.filter((c) => c.card).map((c) => ({ name: c.name, phone: c.phone, serial: c.card!.serial }));
+export async function searchCustomersAction(q: string): Promise<SearchResult> {
+  try {
+    const user = await staff();
+    const term = q.trim();
+    if (term.length < 3) return { ok: true, customers: [] };
+    const digits = term.replace(/\D/g, "");
+    const customers = await db.customer.findMany({
+      where: {
+        businessId: user.business.id,
+        OR: [{ name: { contains: term, mode: "insensitive" } }, ...(digits.length >= 4 ? [{ phone: { contains: digits } }] : [])],
+      },
+      include: { card: true },
+      take: 8,
+    });
+    return {
+      ok: true,
+      customers: customers.filter((c) => c.card).map((c) => ({ name: c.name, phone: c.phone, serial: c.card!.serial })),
+    };
+  } catch (e) {
+    if (e instanceof LoyaltyError) return { ok: false, error: e.message };
+    console.error(e);
+    return { ok: false, error: "No se pudo buscar. Intenta de nuevo." };
+  }
 }
 
 async function guard() {
@@ -149,62 +194,94 @@ async function guard() {
   return user;
 }
 
-export async function purchaseAction(cardId: string, purchaseCents: number, locationId?: string | null): Promise<ScanResult> {
+export async function purchaseAction(
+  cardId: string,
+  purchaseCents: number,
+  locationId?: string | null,
+  requestId?: string | null,
+): Promise<ScanResult> {
   try {
     const user = await guard();
-    const r = await recordPurchase({ staffId: user.id, businessId: user.business.id, locationId: locationId || null }, cardId, purchaseCents);
-    after(() => syncCard(cardId, { notifyBalance: true }));
-    const b = user.business;
-    const msg =
-      b.programType === "POINTS"
-        ? `+${r.delta.pointsDelta} puntos`
-        : b.programType === "CASHBACK"
-          ? `+${formatMoney(r.delta.cashbackDelta, b.currency)} al monedero`
-          : r.earnedReward
-            ? `¡Tarjeta completa! Ganó: ${b.stampReward}`
-            : r.delta.stampsDelta > 0
-              ? "+1 sello"
-              : "Visita registrada (no alcanzó la compra mínima para sello)";
-    return { ok: true, data: await cardData(cardId), message: msg };
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function redeemRewardAction(cardId: string, rewardId?: string, locationId?: string | null): Promise<ScanResult> {
-  try {
-    const user = await guard();
-    const t = await redeemReward({ staffId: user.id, businessId: user.business.id, locationId: locationId || null }, cardId, rewardId);
-    after(() => syncCard(cardId, { notifyBalance: true }));
-    return { ok: true, data: await cardData(cardId), message: t.description };
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function redeemCashbackAction(cardId: string, amountCents: number, locationId?: string | null): Promise<ScanResult> {
-  try {
-    const user = await guard();
-    await redeemCashback({ staffId: user.id, businessId: user.business.id, locationId: locationId || null }, cardId, amountCents);
-    after(() => syncCard(cardId, { notifyBalance: true }));
-    return { ok: true, data: await cardData(cardId), message: `Se usaron ${formatMoney(amountCents, user.business.currency)} del monedero` };
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function redeemCouponAction(code: string, locationId?: string | null, returnCardId?: string): Promise<ScanResult> {
-  try {
-    const user = await guard();
-    const r = await redeemCoupon({ staffId: user.id, businessId: user.business.id, locationId: locationId || null }, code);
-    after(async () => {
-      await syncCoupon(r.coupon.id);
-      if (r.cardId) await syncCard(r.cardId);
+    const ctx = { staffId: user.id, businessId: user.business.id, locationId: locationId || null, requestId: cleanId(requestId) };
+    return await once(user.business.id, ctx.requestId, async () => {
+      const r = await recordPurchase(ctx, cardId, purchaseCents);
+      after(() => syncCard(cardId, { notifyBalance: true }));
+      const b = user.business;
+      const msg =
+        b.programType === "POINTS"
+          ? `+${r.delta.pointsDelta} puntos`
+          : b.programType === "CASHBACK"
+            ? `+${formatMoney(r.delta.cashbackDelta, b.currency)} al monedero`
+            : r.earnedReward
+              ? `¡Tarjeta completa! Ganó: ${b.stampReward}`
+              : r.delta.stampsDelta > 0
+                ? "+1 sello"
+                : "Visita registrada (no alcanzó la compra mínima para sello)";
+      return { ok: true, data: await cardData(cardId), message: msg };
     });
-    const message = `Cupón canjeado: ${r.coupon.promotion.title}`;
-    if (returnCardId && returnCardId === r.cardId) return { ok: true, data: await cardData(returnCardId), message };
-    const res = await lookupAction(code);
-    return res.ok ? { ...res, message } : res;
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function redeemRewardAction(
+  cardId: string,
+  rewardId?: string,
+  locationId?: string | null,
+  requestId?: string | null,
+): Promise<ScanResult> {
+  try {
+    const user = await guard();
+    const ctx = { staffId: user.id, businessId: user.business.id, locationId: locationId || null, requestId: cleanId(requestId) };
+    return await once(user.business.id, ctx.requestId, async () => {
+      const t = await redeemReward(ctx, cardId, rewardId);
+      after(() => syncCard(cardId, { notifyBalance: true }));
+      return { ok: true, data: await cardData(cardId), message: t.description };
+    });
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function redeemCashbackAction(
+  cardId: string,
+  amountCents: number,
+  locationId?: string | null,
+  requestId?: string | null,
+): Promise<ScanResult> {
+  try {
+    const user = await guard();
+    const ctx = { staffId: user.id, businessId: user.business.id, locationId: locationId || null, requestId: cleanId(requestId) };
+    return await once(user.business.id, ctx.requestId, async () => {
+      await redeemCashback(ctx, cardId, amountCents);
+      after(() => syncCard(cardId, { notifyBalance: true }));
+      return { ok: true, data: await cardData(cardId), message: `Se usaron ${formatMoney(amountCents, user.business.currency)} del monedero` };
+    });
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function redeemCouponAction(
+  code: string,
+  locationId?: string | null,
+  returnCardId?: string,
+  requestId?: string | null,
+): Promise<ScanResult> {
+  try {
+    const user = await guard();
+    const ctx = { staffId: user.id, businessId: user.business.id, locationId: locationId || null, requestId: cleanId(requestId) };
+    return await once(user.business.id, ctx.requestId, async () => {
+      const r = await redeemCoupon(ctx, code);
+      after(async () => {
+        await syncCoupon(r.coupon.id);
+        if (r.cardId) await syncCard(r.cardId);
+      });
+      const message = `Cupón canjeado: ${r.coupon.promotion.title}`;
+      if (returnCardId && returnCardId === r.cardId) return { ok: true, data: await cardData(returnCardId), message };
+      const res = await lookupAction(code);
+      return res.ok ? { ...res, message } : res;
+    });
   } catch (e) {
     return fail(e);
   }

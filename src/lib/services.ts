@@ -36,6 +36,7 @@ async function applyTx(
     rewardId?: string;
     couponId?: string;
     countsAsVisit?: boolean;
+    requestId?: string | null;
   },
 ) {
   const { delta } = args;
@@ -67,6 +68,7 @@ async function applyTx(
       locationId: args.locationId ?? null,
       rewardId: args.rewardId,
       couponId: args.couponId,
+      requestId: args.requestId ?? null,
     },
   });
 }
@@ -254,7 +256,7 @@ export async function revokeCoupons(businessId: string, where: { couponId?: stri
 
 // ─────────────────────────── Operaciones del escáner ───────────────────────────
 
-type StaffCtx = { staffId: string; businessId: string; locationId?: string | null };
+type StaffCtx = { staffId: string; businessId: string; locationId?: string | null; requestId?: string | null };
 
 async function cardForBusiness(cardId: string, businessId: string) {
   const card = await db.loyaltyCard.findUnique({ where: { id: cardId } });

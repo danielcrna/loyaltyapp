@@ -45,6 +45,7 @@ export default async function ScannerPage() {
           program={{ type: b.programType, stampReward: b.stampReward, stampMinPurchase: b.stampMinPurchase, currency: b.currency }}
           rewards={rewards.map((r) => ({ id: r.id, name: r.name, pointsCost: r.pointsCost }))}
           locations={locations}
+          canTransact={hasActiveAccess(b)}
         />
       </main>
     </div>
