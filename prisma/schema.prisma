@@ -243,6 +243,8 @@ model Transaction {
   location      Location?   @relation(fields: [locationId], references: [id], onDelete: SetNull)
   rewardId      String?
   couponId      String?
+  // Clave que manda el escáner por cada movimiento; un reintento con la misma clave no se registra dos veces.
+  requestId     String?     @unique
   createdAt     DateTime    @default(now())
 
   @@index([businessId, createdAt])

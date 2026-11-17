@@ -91,6 +91,22 @@ describe("formato", () => {
     expect(parseMoneyToCents("$1,5")).toBe(150);
     expect(parseMoneyToCents("")).toBe(0);
   });
+  it("lee la coma de miles como en México", () => {
+    expect(parseMoneyToCents("1,500")).toBe(150000);
+    expect(parseMoneyToCents("$1,500.50")).toBe(150050);
+    expect(parseMoneyToCents("12,345,678")).toBe(1234567800);
+    expect(parseMoneyToCents("1.500,50")).toBe(150050);
+    expect(parseMoneyToCents("1.500.000")).toBe(150000000);
+  });
+  it("acepta coma decimal con uno o dos dígitos", () => {
+    expect(parseMoneyToCents("150,50")).toBe(15050);
+    expect(parseMoneyToCents("0,500")).toBe(50);
+    expect(parseMoneyToCents("150.5")).toBe(15050);
+  });
+  it("rechaza montos que no se pueden leer", () => {
+    expect(parseMoneyToCents("1,5,0")).toBe(0);
+    expect(parseMoneyToCents("abc")).toBe(0);
+  });
   it("genera slugs", () => {
     expect(slugify("Café La Ñora & Co.")).toBe("cafe-la-nora-co");
   });
