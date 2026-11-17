@@ -374,7 +374,7 @@ function CameraReader({ onCode, onClose }: { onCode: (c: string) => void; onClos
     <div className="space-y-2">
       <div id="qr-reader" className={error ? "hidden" : "overflow-hidden rounded-3xl bg-black"} />
       {error && (
-        <div className="space-y-3 rounded-2xl bg-red-50 p-4 text-sm text-red-800" role="alert">
+        <div className="space-y-3 rounded-2xl bg-red-100 p-4 text-sm text-red-800" role="alert">
           <p>{error}</p>
           <button
             type="button"
@@ -604,16 +604,16 @@ function CardPanel({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-lg font-bold">{card.customerName}</div>
-          <div className="text-xs text-stone-500">
+          <div className="text-sm text-stone-600">
             {card.visits === 0
               ? "Sin visitas registradas"
               : `${card.visits} ${card.visits === 1 ? "visita" : "visitas"} · última ${card.lastVisit}`}
           </div>
         </div>
         <div className="shrink-0 text-right">
-          <div className="text-xs font-semibold text-stone-500 uppercase">{card.balanceLabel}</div>
-          <div className="text-2xl font-bold">{card.balanceValue}</div>
-          {card.secondary && <div className="text-xs font-semibold text-emerald-700">{card.secondary}</div>}
+          <div className="text-xs font-semibold tracking-wide text-stone-600 uppercase">{card.balanceLabel}</div>
+          <div className="text-2xl font-bold tabular-nums">{card.balanceValue}</div>
+          {card.secondary && <div className="text-sm font-semibold text-emerald-800">{card.secondary}</div>}
         </div>
       </div>
 
@@ -694,8 +694,13 @@ function CardPanel({
               confirmLabel={`Confirmar canje: ${r.name}`}
               className="flex min-h-12 w-full items-center justify-between gap-3 rounded-lg border border-stone-300 px-3 text-left"
             >
-              <span>{r.name}</span>
-              <span className="font-semibold">{r.pointsCost} pts</span>
+              <span className="min-w-0">{r.name}</span>
+              <span className="shrink-0 text-right font-semibold tabular-nums">
+                {r.pointsCost} pts
+                {card.points < r.pointsCost && (
+                  <span className="block text-sm font-normal text-stone-600">faltan {r.pointsCost - card.points}</span>
+                )}
+              </span>
             </ConfirmButton>
           ))}
         </div>
@@ -703,7 +708,7 @@ function CardPanel({
 
       {program.type === "CASHBACK" && card.cashbackCents > 0 && (
         <div className="space-y-2 rounded-xl bg-emerald-50 p-3">
-          <div className="text-sm font-semibold">Usar saldo (disponible {money(card.cashbackCents, program.currency)})</div>
+          <div className="text-sm font-semibold">Usar saldo · disponible {money(card.cashbackCents, program.currency)}</div>
           <div className="flex gap-2">
             <input
               aria-label="Monto a usar del monedero"
@@ -749,12 +754,12 @@ function CardPanel({
                   {c.label && <span className="mr-1 text-brand-700">{c.label}</span>}
                   {c.title}
                 </div>
-                {c.expires && <div className="text-xs text-stone-500">Vence {c.expires}</div>}
+                {c.expires && <div className="text-sm text-stone-600">Vence {c.expires}</div>}
               </div>
               <ConfirmButton
                 disabled={disabled}
                 onConfirm={() => onRedeemCoupon(c.code)}
-                confirmLabel="Confirmar"
+                confirmLabel="Confirmar canje"
                 className="min-h-11 shrink-0 rounded-lg bg-brand-700 px-4 text-sm font-bold text-white"
               >
                 Canjear
@@ -793,7 +798,7 @@ function StampStrip({ required, filled, fresh, complete }: { required: number; f
           <span
             key={i}
             className={`grid size-8 place-items-center rounded-full ${
-              on ? (complete ? "bg-brand-600 text-white" : "bg-emerald-700 text-white") : "border-2 border-dashed border-stone-300"
+              on ? (complete ? "bg-brand-600 text-white" : "bg-emerald-700 text-white") : "border-2 border-dashed border-stone-500"
             } ${i === fresh ? "motion-safe:animate-stamp-press" : ""}`}
           >
             {on && (
@@ -866,7 +871,7 @@ function SuccessPanel({
         <StampStrip required={card.stampsRequired} filled={strip.filled} fresh={strip.fresh} complete={earn.earnedReward} />
       ) : (
         <div className="rounded-xl bg-stone-50 py-3">
-          <div className="text-xs font-semibold text-stone-500 uppercase">{card.balanceLabel}</div>
+          <div className="text-xs font-semibold tracking-wide text-stone-600 uppercase">{card.balanceLabel}</div>
           <div className="text-2xl font-bold tabular-nums">{card.balanceValue}</div>
         </div>
       )}
@@ -943,7 +948,7 @@ function CouponPanel({ coupon, disabled, onRedeem }: { coupon: ScanCoupon; disab
           Canjear cupón
         </ConfirmButton>
       ) : (
-        <div className="rounded-lg bg-red-50 p-3 font-semibold text-red-700">{coupon.reason ?? "Cupón no válido"}</div>
+        <div className="rounded-lg bg-red-100 p-3 font-semibold text-red-800">{coupon.reason ?? "Cupón no válido"}</div>
       )}
     </div>
   );
