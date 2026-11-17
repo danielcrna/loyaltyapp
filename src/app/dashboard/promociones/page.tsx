@@ -3,8 +3,16 @@ import { db } from "@/lib/db";
 import { formatDate } from "@/lib/format";
 import { isPromotionLive } from "@/lib/services";
 import { ActionForm, SubmitButton } from "@/components/action-form";
-import { Badge, Card, EmptyState, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
-import { createPromotionAction, sendPromotionAction, togglePromotionAction } from "./actions";
+import { Badge, ButtonLink, Card, Checkbox, EmptyState, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
+import {
+  createPromotionAction,
+  revokePromotionCouponsAction,
+  sendPromotionAction,
+  togglePromotionAction,
+  updateClaimAction,
+} from "./actions";
+import { QR } from "@/components/qr";
+import { publicUrl } from "@/lib/config";
 
 export const metadata = { title: "Cupones y promociones" };
 
@@ -19,12 +27,14 @@ export default async function PromotionsPage() {
   const { business: b } = await requireBusinessUser();
   const promos = await db.promotion.findMany({ where: { businessId: b.id }, orderBy: { createdAt: "desc" } });
   const stats = await db.customerCoupon.groupBy({
-    by: ["promotionId", "status"],
+    by: ["promotionId", "status", "source"],
     where: { promotion: { businessId: b.id } },
     _count: true,
   });
   const count = (id: string, status?: string) =>
     stats.filter((s) => s.promotionId === id && (!status || s.status === status)).reduce((a, s) => a + s._count, 0);
+  const qrClaims = (id: string) =>
+    stats.filter((s) => s.promotionId === id && s.source === "qr" && s.status !== "VOID").reduce((a, s) => a + s._count, 0);
 
   return (
     <>
@@ -61,6 +71,12 @@ export default async function PromotionsPage() {
                       <p className="mt-2 text-xs text-stone-600">
                         Entregados: <strong>{count(p.id)}</strong> · Canjeados: <strong>{count(p.id, "REDEEMED")}</strong> · Activos:{" "}
                         <strong>{count(p.id, "ACTIVE")}</strong>
+                        {count(p.id, "VOID") > 0 && (
+                          <>
+                            {" "}
+                            · Revocados: <strong>{count(p.id, "VOID")}</strong>
+                          </>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -69,8 +85,84 @@ export default async function PromotionsPage() {
                     <button className="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-semibold">{p.active ? "Pausar" : "Activar"}</button>
                   </form>
                 </div>
+                <div className="mt-4 rounded-xl border border-stone-200 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-semibold">
+                      QR para reclamar {p.claimEnabled ? <Badge tone="green">Activo</Badge> : <Badge>Desactivado</Badge>}
+                    </span>
+                    <form action={updateClaimAction}>
+                      <input type="hidden" name="id" value={p.id} />
+                      <button name="op" value={p.claimEnabled ? "disable" : "enable"} className="text-xs font-semibold text-brand-700">
+                        {p.claimEnabled ? "Desactivar QR" : "Activar QR"}
+                      </button>
+                    </form>
+                  </div>
+                  {p.claimEnabled && p.claimToken && (
+                    <div className="mt-3 flex flex-wrap items-start gap-4">
+                      <QR value={publicUrl(`/promo/${p.claimToken}`)} size={120} />
+                      <div className="min-w-0 flex-1 space-y-2 text-xs text-stone-600">
+                        <p>
+                          Tus clientes escanean este QR y el cupón se agrega a su tarjeta. Los nuevos se inscriben y lo reciben al mismo tiempo.
+                        </p>
+                        <p className="break-all font-mono text-stone-500">{publicUrl(`/promo/${p.claimToken}`)}</p>
+                        <p>
+                          Reclamados por QR: <strong>{qrClaims(p.id)}</strong>
+                          {p.claimLimit ? ` de ${p.claimLimit}` : " (sin límite)"}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <ButtonLink href={`/promo/${p.claimToken}/cartel`} variant="secondary" target="_blank" className="px-3 py-1.5 text-xs">
+                            Imprimir cartel
+                          </ButtonLink>
+                          <form action={updateClaimAction} className="flex items-center gap-1">
+                            <input type="hidden" name="id" value={p.id} />
+                            <input
+                              name="claimLimit"
+                              type="number"
+                              min={0}
+                              defaultValue={p.claimLimit ?? ""}
+                              placeholder="Límite"
+                              className="w-20 rounded-lg border border-stone-300 px-2 py-1.5"
+                            />
+                            <button name="op" value="limit" className="rounded-lg border border-stone-300 px-2 py-1.5 font-semibold">
+                              Guardar límite
+                            </button>
+                          </form>
+                          <form action={updateClaimAction}>
+                            <input type="hidden" name="id" value={p.id} />
+                            <button name="op" value="rotate" className="rounded-lg px-2 py-1.5 font-semibold text-stone-500 hover:underline">
+                              Generar QR nuevo
+                            </button>
+                          </form>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {count(p.id) > 0 && (
+                  <details className="mt-3 rounded-xl bg-red-50/60 p-3">
+                    <summary className="cursor-pointer text-sm font-semibold text-red-700">Revocar cupones entregados</summary>
+                    <ActionForm
+                      action={revokePromotionCouponsAction}
+                      className="mt-3"
+                      confirm={`¿Revocar los ${count(p.id, "ACTIVE")} cupones activos de esta promoción? Dejarán de ser válidos.`}
+                    >
+                      <input type="hidden" name="id" value={p.id} />
+                      {count(p.id, "ACTIVE") > 0 ? (
+                        <>
+                          <p className="text-xs text-stone-600">
+                            Anula los {count(p.id, "ACTIVE")} cupones activos (no afecta los ya canjeados). Útil tras un envío de prueba. Para
+                            revocar el cupón de un solo cliente, hazlo desde su ficha en Clientes.
+                          </p>
+                          <SubmitButton variant="danger">Revocar {count(p.id, "ACTIVE")} cupones activos</SubmitButton>
+                        </>
+                      ) : (
+                        <p className="text-xs text-stone-600">No hay cupones activos de esta promoción.</p>
+                      )}
+                    </ActionForm>
+                  </details>
+                )}
                 {live && (
-                  <details className="mt-4 rounded-xl bg-stone-50 p-3">
+                  <details className="mt-3 rounded-xl bg-stone-50 p-3">
                     <summary className="cursor-pointer text-sm font-semibold text-brand-700">Enviar a todos mis clientes</summary>
                     <ActionForm action={sendPromotionAction} className="mt-3" confirm="¿Entregar este cupón a todos tus clientes y notificarles?">
                       <input type="hidden" name="id" value={p.id} />
@@ -122,6 +214,10 @@ export default async function PromotionsPage() {
             </Field>
             <Field label="Imagen (opcional)">
               <Input name="image" type="file" accept="image/png,image/jpeg,image/webp" />
+            </Field>
+            <Checkbox name="claimEnabled" label="Permitir que los clientes la reclamen escaneando un QR" />
+            <Field label="Límite de cupones por QR (opcional)" hint="Ej. solo los primeros 50">
+              <Input name="claimLimit" type="number" min={1} />
             </Field>
             <SubmitButton>Crear promoción</SubmitButton>
           </ActionForm>

@@ -11,6 +11,7 @@ export type Plan = {
   maxLocations: number;
   maxCustomers: number; // Infinity = ilimitado
   maxStaff: number;
+  whiteLabel: boolean; // logotipo propio en el panel y la página de inscripción, sin marca Lealt.io
   features: string[];
 };
 
@@ -23,6 +24,7 @@ export const PLANS: Plan[] = [
     maxLocations: 1,
     maxCustomers: 500,
     maxStaff: 3,
+    whiteLabel: false,
     features: [
       "1 sucursal",
       "Hasta 500 clientes",
@@ -39,6 +41,7 @@ export const PLANS: Plan[] = [
     maxLocations: 5,
     maxCustomers: 5000,
     maxStaff: 15,
+    whiteLabel: false,
     features: [
       "Hasta 5 sucursales",
       "Hasta 5,000 clientes",
@@ -55,7 +58,14 @@ export const PLANS: Plan[] = [
     maxLocations: 10,
     maxCustomers: Number.POSITIVE_INFINITY,
     maxStaff: 100,
-    features: ["Hasta 10 sucursales", "Clientes ilimitados", "Todo lo de Pro", "Soporte prioritario"],
+    whiteLabel: true,
+    features: [
+      "Hasta 10 sucursales",
+      "Clientes ilimitados",
+      "Todo lo de Pro",
+      "Tu logotipo en el panel y la página de inscripción",
+      "Soporte prioritario",
+    ],
   },
 ];
 
@@ -70,4 +80,14 @@ export function stripePriceId(plan: Plan): string | undefined {
 export function planForPriceId(priceId: string | null | undefined): Plan | undefined {
   if (!priceId) return undefined;
   return PLANS.find((p) => stripePriceId(p) === priceId);
+}
+
+/**
+ * Marca que se muestra al negocio y a sus clientes.
+ * Plan Empresarial (whiteLabel): su logotipo de marca (o el de la tarjeta) y sin la leyenda de la plataforma.
+ */
+export function brandFor(b: { plan: string; brandLogoId: string | null; logoId: string | null }) {
+  const whiteLabel = getPlan(b.plan).whiteLabel;
+  const logoId = whiteLabel ? (b.brandLogoId ?? b.logoId) : null;
+  return { whiteLabel, logoUrl: logoId ? `/api/media/${logoId}` : null };
 }

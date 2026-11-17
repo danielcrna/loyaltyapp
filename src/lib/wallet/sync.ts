@@ -15,7 +15,13 @@ import type { BusinessWithMedia } from "./apple";
 export async function loadBusinessForWallet(businessId: string): Promise<BusinessWithMedia> {
   return db.business.findUniqueOrThrow({
     where: { id: businessId },
-    include: { logo: true, strip: true, locations: { where: { active: true }, orderBy: { createdAt: "asc" } } },
+    include: {
+      logo: true,
+      strip: true,
+      stampIcon: true,
+      stampEmptyIcon: true,
+      locations: { where: { active: true }, orderBy: { createdAt: "asc" } },
+    },
   });
 }
 
@@ -140,4 +146,28 @@ export async function broadcastMessage(businessId: string, title: string, body: 
     }
   }
   return { recipients: cards.length, appleSent, googleSent };
+}
+
+/**
+ * Tras revocar cupones: marca el pase del cupón como no válido y actualiza la tarjeta de cada cliente
+ * (que muestra cuántos cupones tiene disponibles).
+ */
+export async function syncRevokedCoupons(coupons: { id: string; code: string; customerId: string }[]) {
+  if (!coupons.length) return;
+  const cards = await db.loyaltyCard.findMany({
+    where: { customerId: { in: [...new Set(coupons.map((c) => c.customerId))] } },
+    select: { id: true, serial: true },
+  });
+  await db.loyaltyCard.updateMany({ where: { id: { in: cards.map((c) => c.id) } }, data: { updatedAt: new Date() } });
+  if (config.apple.enabled) {
+    try {
+      await pushPassUpdates([...coupons.map((c) => c.code), ...cards.map((c) => c.serial)]);
+    } catch (e) {
+      logError("apple", e);
+    }
+  }
+  if (config.google.enabled) {
+    for (const c of coupons) await syncCoupon(c.id);
+    for (const card of cards) await syncCard(card.id);
+  }
 }

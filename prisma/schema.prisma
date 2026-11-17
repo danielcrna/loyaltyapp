@@ -46,30 +46,41 @@ model Business {
   updatedAt DateTime @updatedAt
 
   // Programa de lealtad
-  programType        ProgramType @default(STAMPS)
-  programName        String      @default("Tarjeta de lealtad")
-  pointsPerCurrency  Float       @default(1) // puntos por cada 1 unidad de moneda gastada
-  cashbackPercent    Float       @default(5) // % que regresa al monedero
-  stampsRequired     Int         @default(10) // sellos para ganar la recompensa
-  stampReward        String      @default("Una bebida gratis")
-  stampMinPurchase   Int         @default(0) // compra mínima (centavos) para otorgar sello; 0 = por visita
-  welcomeBonus       Int         @default(0) // puntos / sellos / centavos al inscribirse
-  minRedeemCashback  Int         @default(0) // saldo mínimo (centavos) para usar monedero
-  programTerms       String      @default("")
+  programType       ProgramType @default(STAMPS)
+  programName       String      @default("Tarjeta de lealtad")
+  pointsPerCurrency Float       @default(1) // puntos por cada 1 unidad de moneda gastada
+  cashbackPercent   Float       @default(5) // % que regresa al monedero
+  stampsRequired    Int         @default(10) // sellos para ganar la recompensa
+  stampReward       String      @default("Una bebida gratis")
+  stampMinPurchase  Int         @default(0) // compra mínima (centavos) para otorgar sello; 0 = por visita
+  welcomeBonus      Int         @default(0) // puntos / sellos / centavos al inscribirse
+  minRedeemCashback Int         @default(0) // saldo mínimo (centavos) para usar monedero
+  programTerms      String      @default("")
 
   // Diseño de la tarjeta
-  bgColor     String  @default("#1f2937")
-  fgColor     String  @default("#ffffff")
-  labelColor  String  @default("#fbbf24")
-  logoId      String?
-  logo        Media?  @relation("BusinessLogo", fields: [logoId], references: [id])
-  stripId     String?
-  strip       Media?  @relation("BusinessStrip", fields: [stripId], references: [id])
+  bgColor    String  @default("#1f2937")
+  fgColor    String  @default("#ffffff")
+  labelColor String  @default("#fbbf24")
+  logoId     String?
+  logo       Media?  @relation("BusinessLogo", fields: [logoId], references: [id])
+  stripId    String?
+  strip      Media?  @relation("BusinessStrip", fields: [stripId], references: [id])
+
+  // Diseño de sellos: "default" (círculos) o "custom" (imágenes propias)
+  stampStyle       String  @default("default")
+  stampIconId      String?
+  stampIcon        Media?  @relation("BusinessStamp", fields: [stampIconId], references: [id])
+  stampEmptyIconId String?
+  stampEmptyIcon   Media?  @relation("BusinessStampEmpty", fields: [stampEmptyIconId], references: [id])
+
+  // Marca blanca (plan Empresarial): logotipo en el panel y en la página de inscripción
+  brandLogoId String?
+  brandLogo   Media?  @relation("BusinessBrandLogo", fields: [brandLogoId], references: [id])
 
   // Recordatorios automáticos
-  winbackDays     Int     @default(30) // días sin visita para enviar recordatorio (0 = desactivado)
-  winbackMessage  String  @default("¡Te extrañamos! Ven a visitarnos y sigue sumando en tu tarjeta.")
-  birthdayMessage String  @default("¡Feliz cumpleaños! Tenemos un regalo para ti en tu próxima visita.")
+  winbackDays     Int    @default(30) // días sin visita para enviar recordatorio (0 = desactivado)
+  winbackMessage  String @default("¡Te extrañamos! Ven a visitarnos y sigue sumando en tu tarjeta.")
+  birthdayMessage String @default("¡Feliz cumpleaños! Tenemos un regalo para ti en tu próxima visita.")
 
   // Formulario de inscripción
   askEmail    Boolean @default(true)
@@ -87,15 +98,15 @@ model Business {
   stripeCustomerId     String?            @unique
   stripeSubscriptionId String?            @unique
 
-  users       User[]
-  locations   Location[]
-  customers   Customer[]
-  cards       LoyaltyCard[]
-  rewards     Reward[]
-  promotions  Promotion[]
-  campaigns   Campaign[]
+  users        User[]
+  locations    Location[]
+  customers    Customer[]
+  cards        LoyaltyCard[]
+  rewards      Reward[]
+  promotions   Promotion[]
+  campaigns    Campaign[]
   transactions Transaction[]
-  media       Media[]       @relation("BusinessMedia")
+  media        Media[]       @relation("BusinessMedia")
 }
 
 model User {
@@ -110,8 +121,8 @@ model User {
   createdAt    DateTime  @default(now())
   lastLoginAt  DateTime?
 
-  transactions     Transaction[]
-  redeemedCoupons  CustomerCoupon[]
+  transactions    Transaction[]
+  redeemedCoupons CustomerCoupon[]
 }
 
 // Sucursales: también se usan como ubicaciones relevantes para los pases (geonotificaciones)
@@ -140,9 +151,12 @@ model Media {
   height     Int?
   createdAt  DateTime  @default(now())
 
-  logoFor  Business[]  @relation("BusinessLogo")
-  stripFor Business[]  @relation("BusinessStrip")
-  promos   Promotion[]
+  logoFor       Business[]  @relation("BusinessLogo")
+  stripFor      Business[]  @relation("BusinessStrip")
+  stampFor      Business[]  @relation("BusinessStamp")
+  stampEmptyFor Business[]  @relation("BusinessStampEmpty")
+  brandLogoFor  Business[]  @relation("BusinessBrandLogo")
+  promos        Promotion[]
 }
 
 // ─────────────────────────── Clientes y tarjetas ───────────────────────────
@@ -169,28 +183,28 @@ model Customer {
 }
 
 model LoyaltyCard {
-  id                  String    @id @default(cuid())
-  serial              String    @unique // va en el QR y en los pases
-  authToken           String // token de autenticación del web service de Apple Wallet
-  businessId          String
-  business            Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customerId          String    @unique
-  customer            Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  points              Int       @default(0)
-  cashbackCents       Int       @default(0)
-  stamps              Int       @default(0)
-  rewardsAvailable    Int       @default(0) // recompensas ganadas por sellos aún sin canjear
-  visits              Int       @default(0)
-  totalSpentCents     Int       @default(0)
-  lifetimePoints      Int       @default(0)
-  lastVisitAt         DateTime?
-  lastMessage         String? // último mensaje enviado al pase (aparece como notificación)
-  lastReminderAt      DateTime?
-  lastBirthdayYear    Int?
-  appleInstalled      Boolean   @default(false)
-  googleSaved         Boolean   @default(false)
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt // se usa como "lastUpdated" del pase
+  id               String    @id @default(cuid())
+  serial           String    @unique // va en el QR y en los pases
+  authToken        String // token de autenticación del web service de Apple Wallet
+  businessId       String
+  business         Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customerId       String    @unique
+  customer         Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  points           Int       @default(0)
+  cashbackCents    Int       @default(0)
+  stamps           Int       @default(0)
+  rewardsAvailable Int       @default(0) // recompensas ganadas por sellos aún sin canjear
+  visits           Int       @default(0)
+  totalSpentCents  Int       @default(0)
+  lifetimePoints   Int       @default(0)
+  lastVisitAt      DateTime?
+  lastMessage      String? // último mensaje enviado al pase (aparece como notificación)
+  lastReminderAt   DateTime?
+  lastBirthdayYear Int?
+  appleInstalled   Boolean   @default(false)
+  googleSaved      Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt // se usa como "lastUpdated" del pase
 
   transactions Transaction[]
 
@@ -208,25 +222,25 @@ enum TxType {
 }
 
 model Transaction {
-  id            String       @id @default(cuid())
+  id            String      @id @default(cuid())
   businessId    String
-  business      Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business      Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
   cardId        String
-  card          LoyaltyCard  @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  card          LoyaltyCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
   type          TxType
-  purchaseCents Int          @default(0)
-  pointsDelta   Int          @default(0)
-  cashbackDelta Int          @default(0)
-  stampsDelta   Int          @default(0)
-  rewardsDelta  Int          @default(0)
-  description   String       @default("")
+  purchaseCents Int         @default(0)
+  pointsDelta   Int         @default(0)
+  cashbackDelta Int         @default(0)
+  stampsDelta   Int         @default(0)
+  rewardsDelta  Int         @default(0)
+  description   String      @default("")
   staffId       String?
-  staff         User?        @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  staff         User?       @relation(fields: [staffId], references: [id], onDelete: SetNull)
   locationId    String?
-  location      Location?    @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  location      Location?   @relation(fields: [locationId], references: [id], onDelete: SetNull)
   rewardId      String?
   couponId      String?
-  createdAt     DateTime     @default(now())
+  createdAt     DateTime    @default(now())
 
   @@index([businessId, createdAt])
   @@index([cardId, createdAt])
@@ -254,22 +268,26 @@ enum AutoAssign {
 }
 
 model Promotion {
-  id             String     @id @default(cuid())
-  businessId     String
-  business       Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  title          String // "2x1 en capuccinos"
-  description    String     @default("")
-  terms          String     @default("")
-  discountLabel  String     @default("") // texto corto destacado: "-20%", "2x1", "GRATIS"
-  imageId        String?
-  image          Media?     @relation(fields: [imageId], references: [id])
-  startsAt       DateTime?
-  endsAt         DateTime?
-  validDays      Int?       // vigencia en días desde que se entrega el cupón
-  autoAssign     AutoAssign @default(NONE)
-  active         Boolean    @default(true)
-  googleVersion  Int        @default(0)
-  createdAt      DateTime   @default(now())
+  id            String     @id @default(cuid())
+  businessId    String
+  business      Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  title         String // "2x1 en capuccinos"
+  description   String     @default("")
+  terms         String     @default("")
+  discountLabel String     @default("") // texto corto destacado: "-20%", "2x1", "GRATIS"
+  imageId       String?
+  image         Media?     @relation(fields: [imageId], references: [id])
+  startsAt      DateTime?
+  endsAt        DateTime?
+  validDays     Int? // vigencia en días desde que se entrega el cupón
+  autoAssign    AutoAssign @default(NONE)
+  active        Boolean    @default(true)
+  googleVersion Int        @default(0)
+  // Reclamo por QR: el cliente escanea el QR de la promoción y el cupón se agrega a su tarjeta
+  claimEnabled  Boolean    @default(false)
+  claimToken    String?    @unique
+  claimLimit    Int? // máximo de cupones que se pueden reclamar por QR (null = sin límite)
+  createdAt     DateTime   @default(now())
 
   coupons CustomerCoupon[]
 }
@@ -290,6 +308,8 @@ model CustomerCoupon {
   customerId   String
   customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
   status       CouponStatus @default(ACTIVE)
+  source       String       @default("manual") // manual | auto | qr
+  revokedAt    DateTime?
   expiresAt    DateTime?
   redeemedAt   DateTime?
   redeemedById String?

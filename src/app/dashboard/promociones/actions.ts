@@ -6,8 +6,9 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { MANAGERS, requireBusinessUser } from "@/lib/auth";
 import { normalizeUpload } from "@/lib/images";
-import { issueCoupons, LoyaltyError } from "@/lib/services";
-import { broadcastMessage } from "@/lib/wallet/sync";
+import { issueCoupons, LoyaltyError, revokeCoupons } from "@/lib/services";
+import { randomCode } from "@/lib/codes";
+import { broadcastMessage, syncRevokedCoupons } from "@/lib/wallet/sync";
 import type { ActionResult } from "@/components/action-form";
 
 const PromoSchema = z.object({
@@ -40,6 +41,8 @@ export async function createPromotionAction(_prev: ActionResult, fd: FormData): 
     ).id;
   }
   const validDays = d.validDays ? Math.max(1, Math.floor(Number(d.validDays))) : null;
+  const claimEnabled = fd.get("claimEnabled") === "on";
+  const claimLimit = Math.floor(Number(fd.get("claimLimit") || 0));
   await db.promotion.create({
     data: {
       businessId: user.business.id,
@@ -52,6 +55,9 @@ export async function createPromotionAction(_prev: ActionResult, fd: FormData): 
       validDays: Number.isFinite(validDays) ? validDays : null,
       autoAssign: d.autoAssign,
       imageId,
+      claimEnabled,
+      claimToken: claimEnabled ? randomCode(10) : null,
+      claimLimit: claimLimit > 0 ? claimLimit : null,
     },
   });
   revalidatePath("/dashboard/promociones");
@@ -97,4 +103,36 @@ export async function sendPromotionAction(_prev: ActionResult, fd: FormData): Pr
     if (e instanceof LoyaltyError) return { error: e.message };
     throw e;
   }
+}
+
+/** Activa/desactiva el QR de la promoción y ajusta el límite de reclamos. */
+export async function updateClaimAction(fd: FormData) {
+  const user = await requireBusinessUser(MANAGERS);
+  const p = await db.promotion.findFirst({ where: { id: String(fd.get("id")), businessId: user.business.id } });
+  if (!p) return;
+  const op = String(fd.get("op"));
+  if (op === "enable") {
+    await db.promotion.update({ where: { id: p.id }, data: { claimEnabled: true, claimToken: p.claimToken ?? randomCode(10) } });
+  } else if (op === "disable") {
+    await db.promotion.update({ where: { id: p.id }, data: { claimEnabled: false } });
+  } else if (op === "limit") {
+    const n = Math.floor(Number(fd.get("claimLimit") || 0));
+    await db.promotion.update({ where: { id: p.id }, data: { claimLimit: n > 0 ? n : null } });
+  } else if (op === "rotate") {
+    // Genera un QR nuevo: el anterior deja de funcionar (útil si se compartió por error)
+    await db.promotion.update({ where: { id: p.id }, data: { claimToken: randomCode(10) } });
+  }
+  revalidatePath("/dashboard/promociones");
+}
+
+/** Revoca todos los cupones activos de una promoción (por ejemplo, después de un envío de prueba). */
+export async function revokePromotionCouponsAction(_prev: ActionResult, fd: FormData): Promise<ActionResult> {
+  const user = await requireBusinessUser(MANAGERS);
+  const promotionId = String(fd.get("id"));
+  const revoked = await revokeCoupons(user.business.id, { promotionId });
+  if (revoked.length) after(() => syncRevokedCoupons(revoked));
+  revalidatePath("/dashboard/promociones");
+  return revoked.length
+    ? { ok: true, message: `Se revocaron ${revoked.length} cupón(es) activos.` }
+    : { ok: true, message: "No había cupones activos para revocar." };
 }

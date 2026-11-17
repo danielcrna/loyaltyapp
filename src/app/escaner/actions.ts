@@ -111,7 +111,14 @@ export async function lookupAction(raw: string): Promise<ScanResult> {
         status: coupon.status,
         expires: coupon.expiresAt ? formatDate(coupon.expiresAt) : null,
         valid,
-        reason: coupon.status === "REDEEMED" ? `Canjeado el ${formatDate(coupon.redeemedAt)}` : expired ? "Cupón vencido" : undefined,
+        reason:
+          coupon.status === "REDEEMED"
+            ? `Canjeado el ${formatDate(coupon.redeemedAt)}`
+            : coupon.status === "VOID"
+              ? "Cupón revocado por el negocio"
+              : expired
+                ? "Cupón vencido"
+                : undefined,
       },
     };
   } catch (e) {

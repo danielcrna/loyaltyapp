@@ -19,7 +19,22 @@ import { formatDate, formatMoney } from "../format";
  *   actualizaciones por APNs. Los campos con "changeMessage" generan una notificación visible.
  */
 
-export type BusinessWithMedia = Business & { logo: Media | null; strip: Media | null; locations: Location[] };
+export type BusinessWithMedia = Business & {
+  logo: Media | null;
+  strip: Media | null;
+  stampIcon: Media | null;
+  stampEmptyIcon: Media | null;
+  locations: Location[];
+};
+
+/** Imágenes del diseño de sellos personalizado (null = diseño predeterminado). */
+export function stampImages(b: BusinessWithMedia) {
+  if (b.stampStyle !== "custom" || !b.stampIcon) return { stampImage: null, emptyImage: null };
+  return {
+    stampImage: Buffer.from(b.stampIcon.data),
+    emptyImage: b.stampEmptyIcon ? Buffer.from(b.stampEmptyIcon.data) : null,
+  };
+}
 
 function certificates() {
   const { apple } = config;
@@ -109,6 +124,7 @@ export async function buildLoyaltyPass(
             fg: business.fgColor,
             accent: business.labelColor,
             background: stripBg,
+            ...stampImages(business),
           })
         : await renderStrip(w, h, { background: stripBg, bg: business.bgColor });
   }
@@ -226,7 +242,14 @@ export async function buildCouponPass(
   pass.auxiliaryFields.push({
     key: "status",
     label: "Estado",
-    value: coupon.status === "ACTIVE" ? "Disponible" : coupon.status === "REDEEMED" ? "Canjeado" : "No válido",
+    value:
+      coupon.status === "ACTIVE"
+        ? "Disponible"
+        : coupon.status === "REDEEMED"
+          ? "Canjeado"
+          : coupon.status === "VOID"
+            ? "Revocado"
+            : "Vencido",
     changeMessage: "Tu cupón: %@",
   });
   if (p.description) pass.backFields.push({ key: "desc", label: "Descripción", value: p.description });

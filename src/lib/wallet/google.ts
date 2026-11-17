@@ -158,7 +158,14 @@ export function buildOfferObject(promo: Promotion, coupon: CustomerCoupon) {
   return {
     id: offerObjectId(coupon),
     classId: offerClassId(promo),
-    state: coupon.status === "ACTIVE" ? "ACTIVE" : coupon.status === "EXPIRED" ? "EXPIRED" : "COMPLETED",
+    state:
+      coupon.status === "ACTIVE"
+        ? "ACTIVE"
+        : coupon.status === "EXPIRED"
+          ? "EXPIRED"
+          : coupon.status === "VOID"
+            ? "INACTIVE"
+            : "COMPLETED",
     barcode: { type: "QR_CODE", value: coupon.code, alternateText: coupon.code },
     ...(coupon.expiresAt ? { validTimeInterval: { end: { date: coupon.expiresAt.toISOString() } } } : {}),
     linksModuleData: { uris: [{ id: "coupon", uri: publicUrl(`/cupon/${coupon.code}`), description: "Ver cupón" }] },

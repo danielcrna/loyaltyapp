@@ -6,8 +6,8 @@ import { after } from "next/server";
 import { db } from "@/lib/db";
 import { MANAGERS, requireBusinessUser } from "@/lib/auth";
 import { parseMoneyToCents } from "@/lib/format";
-import { adjustBalance, enrollCustomer, issueCoupons, LoyaltyError, normalizePhone } from "@/lib/services";
-import { broadcastMessage, syncCard } from "@/lib/wallet/sync";
+import { adjustBalance, enrollCustomer, issueCoupons, LoyaltyError, normalizePhone, revokeCoupons } from "@/lib/services";
+import { broadcastMessage, syncCard, syncRevokedCoupons } from "@/lib/wallet/sync";
 import type { ActionResult } from "@/components/action-form";
 
 function parseBirthday(v: FormDataEntryValue | null) {
@@ -126,4 +126,12 @@ export async function deleteCustomerAction(fd: FormData) {
   await db.customer.delete({ where: { id: c.id } });
   revalidatePath("/dashboard/clientes");
   redirect("/dashboard/clientes");
+}
+
+/** Revoca un cupón activo de un cliente (entregado por error o de prueba). */
+export async function revokeCouponAction(fd: FormData) {
+  const user = await requireBusinessUser(MANAGERS);
+  const revoked = await revokeCoupons(user.business.id, { couponId: String(fd.get("couponId")) });
+  if (revoked.length) after(() => syncRevokedCoupons(revoked));
+  revalidatePath(`/dashboard/clientes/${String(fd.get("customerId"))}`);
 }

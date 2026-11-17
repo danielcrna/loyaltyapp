@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { MANAGERS, requireBusinessUser } from "@/lib/auth";
 import { normalizeUpload } from "@/lib/images";
 import { syncBusinessDesign } from "@/lib/wallet/sync";
+import { getPlan } from "@/lib/plans";
 import type { ActionResult } from "@/components/action-form";
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -27,9 +28,15 @@ export async function saveDesignAction(_prev: ActionResult, fd: FormData): Promi
   const fgColor = String(fd.get("fgColor"));
   const labelColor = String(fd.get("labelColor"));
   if (![bgColor, fgColor, labelColor].every((c) => HEX.test(c))) return { error: "Colores inválidos" };
+  const stampStyle = fd.get("stampStyle") === "custom" ? "custom" : "default";
   try {
     const logoId = await saveImage(user.business.id, fd.get("logo"), 800);
     const stripId = await saveImage(user.business.id, fd.get("strip"), 1200);
+    const stampIconId = await saveImage(user.business.id, fd.get("stampIcon"), 300);
+    const stampEmptyIconId = await saveImage(user.business.id, fd.get("stampEmptyIcon"), 300);
+    if (stampStyle === "custom" && !stampIconId && !user.business.stampIconId) {
+      return { error: "Para el diseño personalizado sube la imagen del sello" };
+    }
     await db.business.update({
       where: { id: user.business.id },
       data: {
@@ -43,6 +50,10 @@ export async function saveDesignAction(_prev: ActionResult, fd: FormData): Promi
         ...(stripId ? { stripId } : {}),
         ...(fd.get("removeStrip") === "on" ? { stripId: null } : {}),
         ...(fd.get("removeLogo") === "on" ? { logoId: null } : {}),
+        stampStyle,
+        ...(stampIconId ? { stampIconId } : {}),
+        ...(stampEmptyIconId ? { stampEmptyIconId } : {}),
+        ...(fd.get("removeStampEmpty") === "on" ? { stampEmptyIconId: null } : {}),
         googleClassVersion: { increment: 1 },
       },
     });
@@ -52,4 +63,25 @@ export async function saveDesignAction(_prev: ActionResult, fd: FormData): Promi
   after(() => syncBusinessDesign(user.business.id));
   revalidatePath("/dashboard", "layout");
   return { ok: true, message: "Diseño guardado. Las tarjetas en Wallet se actualizarán automáticamente." };
+}
+
+/** Logotipo de marca blanca (solo plan Empresarial): se muestra en el panel y en la página de inscripción. */
+export async function saveBrandAction(_prev: ActionResult, fd: FormData): Promise<ActionResult> {
+  const user = await requireBusinessUser(MANAGERS);
+  if (!getPlan(user.business.plan).whiteLabel) {
+    return { error: "El logotipo de marca está disponible en el plan Empresarial." };
+  }
+  try {
+    const brandLogoId = await saveImage(user.business.id, fd.get("brandLogo"), 800);
+    const remove = fd.get("removeBrandLogo") === "on";
+    if (!brandLogoId && !remove) return { error: "Selecciona una imagen" };
+    await db.business.update({
+      where: { id: user.business.id },
+      data: { brandLogoId: remove ? null : brandLogoId },
+    });
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+  revalidatePath("/", "layout");
+  return { ok: true, message: "Logotipo de marca actualizado" };
 }

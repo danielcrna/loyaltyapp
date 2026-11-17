@@ -10,9 +10,12 @@ Plataforma multi-negocio para vender, como servicio hospedado, programas de leal
 **Para los negocios (panel `/dashboard`)**
 - Registro con prueba gratis y suscripción mensual con Stripe (3 planes con límites de sucursales, clientes y usuarios).
 - Programa a elegir: **sellos/visitas**, **puntos** (con catálogo de recompensas) o **monedero electrónico** (cashback), con bono de bienvenida.
-- Diseño de tarjeta: logo, colores e imagen de franja; vista previa en vivo. La franja de sellos se genera automáticamente.
+- Diseño de tarjeta: logo, colores e imagen de franja; vista previa en vivo. Sellos con diseño **predeterminado** o **personalizado** (imagen propia para sello obtenido y, opcionalmente, para sello pendiente); la franja de sellos se genera automáticamente.
 - **Clientes (CRM):** nombre, teléfono, correo, cumpleaños, consentimiento de promociones, historial, ajustes manuales, búsqueda, exportación CSV y eliminación (derechos ARCO).
 - **Cupones y promociones** con QR, vigencia y entrega manual, masiva o automática (al inscribirse, en el cumpleaños o por inactividad).
+- **Cupones por QR** (`/promo/<token>`): cartel imprimible; el cliente escanea y el cupón se agrega a su tarjeta (un toque si su navegador ya la conoce, por teléfono/correo, o inscribiéndose en ese momento). Límite opcional de reclamos.
+- **Revocar cupones** entregados por error o de prueba: individualmente desde la ficha del cliente o todos los activos de una promoción.
+- **Marca blanca (plan Empresarial):** logotipo propio en el panel y en las páginas públicas, sin la leyenda de la plataforma.
 - **Notificaciones** a todos los clientes o por segmento, que llegan a la tarjeta guardada en el wallet.
 - **Sucursales** con coordenadas y mensaje personalizado de pantalla de bloqueo → avisos por cercanía.
 - Equipo con roles (dueño, gerente, cajero).

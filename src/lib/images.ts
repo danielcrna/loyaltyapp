@@ -40,8 +40,20 @@ export async function renderPassLogo(scale: number, logo: Buffer) {
     .toBuffer();
 }
 
+/** Silueta semitransparente del sello en el color del texto (sello vacío por defecto en el diseño personalizado). */
+async function fadeImage(img: Buffer, size: number, color: string) {
+  const icon = await sharp(img).resize(size, size, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).ensureAlpha().png().toBuffer();
+  const tint = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="100%" height="100%" fill="${esc(color)}" fill-opacity="0.35"/></svg>`,
+  );
+  return sharp(tint).composite([{ input: icon, blend: "dest-in" }]).png().toBuffer();
+}
+
 /**
- * Imagen "strip" con los sellos de la tarjeta: círculos llenos/vacíos.
+ * Imagen "strip" con los sellos de la tarjeta.
+ * - Diseño predeterminado: círculos llenos/vacíos con palomita.
+ * - Diseño personalizado: la imagen del sello para los espacios ganados y, para los vacíos,
+ *   la imagen de "sello vacío" (o el mismo sello en gris y semitransparente).
  * Se usa como strip en Apple Wallet y como heroImage en Google Wallet, y se regenera con cada sello.
  */
 export async function renderStampStrip(opts: {
@@ -53,6 +65,8 @@ export async function renderStampStrip(opts: {
   fg: string;
   accent: string;
   background?: Buffer | null;
+  stampImage?: Buffer | null;
+  emptyImage?: Buffer | null;
 }) {
   const { width, height, stamps, required, bg, fg, accent } = opts;
   const n = Math.max(1, Math.min(required, 20));
@@ -62,18 +76,38 @@ export async function renderStampStrip(opts: {
   const cellW = (width - padX * 2) / perRow;
   const cellH = height / rows;
   const r = Math.min(cellW, cellH) * 0.36;
+  const custom = Boolean(opts.stampImage);
+
   let circles = "";
+  const icons: { input: Buffer; left: number; top: number }[] = [];
+  const iconSize = Math.max(8, Math.round(r * 2.3));
+  const filledIcon = custom
+    ? await sharp(opts.stampImage!).resize(iconSize, iconSize, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
+    : null;
+  const emptyIcon = custom
+    ? opts.emptyImage
+      ? await sharp(opts.emptyImage).resize(iconSize, iconSize, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
+      : await fadeImage(opts.stampImage!, iconSize, fg)
+    : null;
+
   for (let i = 0; i < n; i++) {
     const row = Math.floor(i / perRow);
     const col = i % perRow;
     const cx = padX + cellW * col + cellW / 2;
     const cy = cellH * row + cellH / 2;
     const filled = i < stamps;
+    if (custom) {
+      icons.push({
+        input: filled ? filledIcon! : emptyIcon!,
+        left: Math.round(cx - iconSize / 2),
+        top: Math.round(cy - iconSize / 2),
+      });
+      continue;
+    }
     circles += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${filled ? esc(accent) : "none"}" stroke="${esc(
       filled ? accent : fg,
     )}" stroke-opacity="${filled ? 1 : 0.55}" stroke-width="${Math.max(2, r * 0.12)}"/>`;
     if (filled) {
-      // palomita
       const s = r * 0.5;
       circles += `<path d="M ${cx - s} ${cy} L ${cx - s * 0.25} ${cy + s * 0.7} L ${cx + s} ${cy - s * 0.6}" fill="none"
         stroke="${esc(bg)}" stroke-width="${Math.max(2, r * 0.18)}" stroke-linecap="round" stroke-linejoin="round"/>`;
@@ -81,15 +115,11 @@ export async function renderStampStrip(opts: {
   }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
     <rect width="100%" height="100%" fill="${esc(bg)}" fill-opacity="${opts.background ? 0.55 : 1}"/>${circles}</svg>`;
-  const overlay = Buffer.from(svg);
-  if (opts.background) {
-    return sharp(opts.background)
-      .resize(width, height, { fit: "cover" })
-      .composite([{ input: overlay }])
-      .png()
-      .toBuffer();
-  }
-  return sharp(overlay).png().toBuffer();
+  const layers = [{ input: Buffer.from(svg), left: 0, top: 0 }, ...icons];
+  const base = opts.background
+    ? sharp(opts.background).resize(width, height, { fit: "cover" })
+    : sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } });
+  return base.composite(layers).png().toBuffer();
 }
 
 /** Strip/hero genérico (programas de puntos o monedero): imagen subida o banda de color. */

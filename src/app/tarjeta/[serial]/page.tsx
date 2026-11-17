@@ -5,6 +5,9 @@ import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { CardView } from "@/components/card-view";
 import { QR } from "@/components/qr";
 import { WalletButtons } from "@/components/wallet-buttons";
+import { PoweredBy } from "@/components/powered-by";
+import { RememberCard } from "./remember";
+import { getPlan } from "@/lib/plans";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Mi tarjeta", robots: { index: false } };
@@ -27,6 +30,7 @@ export default async function CardPage({ params, searchParams }: { params: Promi
   return (
     <div className="min-h-screen bg-stone-100">
       <div className="mx-auto max-w-md space-y-5 px-4 py-8">
+        <RememberCard serial={card.serial} />
         {nueva && (
           <div className="rounded-xl bg-emerald-100 px-4 py-3 text-center text-sm font-semibold text-emerald-900">
             ¡Listo, {card.customer.name.split(" ")[0]}! Guarda tu tarjeta en tu celular 👇
@@ -117,6 +121,7 @@ export default async function CardPage({ params, searchParams }: { params: Promi
         <p className="text-center text-xs text-stone-400">
           {b.name} · {b.programName}
         </p>
+        <PoweredBy hidden={getPlan(b.plan).whiteLabel} />
       </div>
     </div>
   );

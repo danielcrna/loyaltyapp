@@ -9,7 +9,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ serial:
   const { serial } = await params;
   const card = await db.loyaltyCard.findUnique({
     where: { serial },
-    include: { business: { include: { strip: true } } },
+    include: { business: { include: { strip: true, stampIcon: true, stampEmptyIcon: true } } },
   });
   if (!card) return new NextResponse("No encontrado", { status: 404 });
   const b = card.business;
@@ -22,6 +22,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ serial:
     fg: b.fgColor,
     accent: b.labelColor,
     background: b.strip ? Buffer.from(b.strip.data) : null,
+    ...(b.stampStyle === "custom" && b.stampIcon
+      ? {
+          stampImage: Buffer.from(b.stampIcon.data),
+          emptyImage: b.stampEmptyIcon ? Buffer.from(b.stampEmptyIcon.data) : null,
+        }
+      : {}),
   });
   // La URL incluye el número de sellos (?s=), así que puede cachearse.
   return new NextResponse(new Uint8Array(png), {

@@ -4,8 +4,10 @@ import { db } from "@/lib/db";
 import { hasActiveAccess } from "@/lib/billing";
 import { formatMoney } from "@/lib/format";
 import { CardView } from "@/components/card-view";
-import { JoinForm } from "./join-form";
+import { JoinForm } from "@/components/join-form";
 import { joinAction } from "./actions";
+import { brandFor } from "@/lib/plans";
+import { PoweredBy } from "@/components/powered-by";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -33,11 +35,16 @@ export default async function JoinPage({ params }: Props) {
         : `¡Te regalamos ${b.welcomeBonus} ${b.programType === "POINTS" ? "puntos" : "sellos"} de bienvenida!`
       : null;
 
+  const brand = brandFor(b);
   return (
     <div className="min-h-screen" style={{ background: `linear-gradient(180deg, ${b.bgColor} 0%, ${b.bgColor} 260px, #fafaf9 260px)` }}>
       <div className="mx-auto max-w-md px-4 pt-8 pb-12">
         <div className="mb-6 text-center" style={{ color: b.fgColor }}>
-          <h1 className="text-2xl font-bold">{b.name}</h1>
+          {brand.logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={brand.logoUrl} alt={b.name} className="mx-auto mb-3 h-16 max-w-[240px] object-contain" />
+          )}
+          <h1 className={brand.logoUrl ? "sr-only" : "text-2xl font-bold"}>{b.name}</h1>
           <p className="mt-1 opacity-90">{pitch}</p>
           {bonus && <p className="mt-2 inline-block rounded-full px-3 py-1 text-sm font-semibold" style={{ background: b.labelColor, color: b.bgColor }}>{bonus}</p>}
         </div>
@@ -60,6 +67,7 @@ export default async function JoinPage({ params }: Props) {
           )}
         </div>
         {b.programTerms && <p className="mt-4 text-center text-xs text-stone-500">{b.programTerms}</p>}
+        <PoweredBy hidden={brand.whiteLabel} />
       </div>
     </div>
   );

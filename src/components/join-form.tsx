@@ -9,12 +9,14 @@ export function JoinForm({
   askEmail,
   askBirthday,
   businessName,
+  submitLabel = "Obtener mi tarjeta",
 }: {
   action: (prev: ActionResult, fd: FormData) => Promise<ActionResult>;
   askPhone: boolean;
   askEmail: boolean;
   askBirthday: boolean;
   businessName: string;
+  submitLabel?: string;
 }) {
   return (
     <ActionForm action={action}>
@@ -51,7 +53,7 @@ export function JoinForm({
         }
       />
       <Checkbox name="marketing" defaultChecked label={`Quiero recibir promociones de ${businessName}.`} />
-      <SubmitButton className="w-full py-3 text-base">Obtener mi tarjeta</SubmitButton>
+      <SubmitButton className="w-full py-3 text-base">{submitLabel}</SubmitButton>
     </ActionForm>
   );
 }

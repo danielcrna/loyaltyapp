@@ -9,7 +9,14 @@ import { Badge, ButtonLink, Card, Checkbox, Field, Input, PageHeader, Select, Te
 import { CardView } from "@/components/card-view";
 import { QR } from "@/components/qr";
 import { publicUrl } from "@/lib/config";
-import { adjustAction, deleteCustomerAction, giveCouponAction, messageCustomerAction, updateCustomerAction } from "../actions";
+import {
+  adjustAction,
+  deleteCustomerAction,
+  giveCouponAction,
+  messageCustomerAction,
+  revokeCouponAction,
+  updateCustomerAction,
+} from "../actions";
 
 export default async function CustomerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -129,13 +136,29 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
             {customer.coupons.length > 0 && (
               <ul className="mb-4 divide-y divide-stone-100 text-sm">
                 {customer.coupons.map((c) => (
-                  <li key={c.id} className="flex items-center justify-between py-2">
+                  <li key={c.id} className="flex items-center justify-between gap-2 py-2">
                     <span>
                       {c.promotion.title} <span className="font-mono text-xs text-stone-400">{c.code}</span>
+                      {c.source === "qr" && <span className="ml-1 text-xs text-stone-400">· por QR</span>}
                     </span>
-                    <Badge tone={c.status === "ACTIVE" ? "green" : c.status === "REDEEMED" ? "blue" : "stone"}>
-                      {c.status === "ACTIVE" ? "Activo" : c.status === "REDEEMED" ? `Canjeado ${formatDate(c.redeemedAt)}` : "Vencido"}
-                    </Badge>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <Badge tone={c.status === "ACTIVE" ? "green" : c.status === "REDEEMED" ? "blue" : c.status === "VOID" ? "red" : "stone"}>
+                        {c.status === "ACTIVE"
+                          ? "Activo"
+                          : c.status === "REDEEMED"
+                            ? `Canjeado ${formatDate(c.redeemedAt)}`
+                            : c.status === "VOID"
+                              ? `Revocado ${formatDate(c.revokedAt)}`
+                              : "Vencido"}
+                      </Badge>
+                      {c.status === "ACTIVE" && (
+                        <form action={revokeCouponAction}>
+                          <input type="hidden" name="couponId" value={c.id} />
+                          <input type="hidden" name="customerId" value={customer.id} />
+                          <button className="text-xs font-semibold text-red-700 hover:underline">Revocar</button>
+                        </form>
+                      )}
+                    </span>
                   </li>
                 ))}
               </ul>

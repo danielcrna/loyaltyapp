@@ -2,6 +2,8 @@ import Link from "next/link";
 import { requireBusinessUser } from "@/lib/auth";
 import { hasActiveAccess, trialDaysLeft } from "@/lib/billing";
 import { DashboardNav } from "@/components/dashboard-nav";
+import { config } from "@/lib/config";
+import { brandFor } from "@/lib/plans";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await requireBusinessUser(["OWNER", "MANAGER"]);
@@ -10,7 +12,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const days = trialDaysLeft(b);
   return (
     <div className="min-h-screen">
-      <DashboardNav isOwner={user.role === "OWNER"} businessName={b.name} userName={user.name} />
+      <DashboardNav
+        isOwner={user.role === "OWNER"}
+        businessName={b.name}
+        userName={user.name}
+        appName={config.appName}
+        brandLogoUrl={brandFor(b).logoUrl}
+      />
       <div className="lg:pl-64">
         {!active ? (
           <div className="bg-red-600 px-4 py-2 text-center text-sm text-white">

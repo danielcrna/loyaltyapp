@@ -21,6 +21,9 @@ type Props = {
     | "stampMinPurchase"
     | "minRedeemCashback"
     | "currency"
+    | "stampStyle"
+    | "stampIconId"
+    | "stampEmptyIconId"
   >;
   card?: Pick<LoyaltyCard, "points" | "cashbackCents" | "stamps" | "rewardsAvailable" | "visits"> | null;
   customerName?: string;
@@ -55,6 +58,30 @@ export function CardView({ business: b, card, customerName = "Nombre del cliente
           <div className={`grid gap-2 ${b.stampsRequired > 10 ? "grid-cols-10" : "grid-cols-5"}`}>
             {Array.from({ length: b.stampsRequired }).map((_, i) => {
               const filled = i < balances.stamps;
+              if (b.stampStyle === "custom" && b.stampIconId) {
+                if (!filled && !b.stampEmptyIconId) {
+                  // Igual que en el pase: silueta del sello en el color del texto, semitransparente
+                  const mask = `url(/api/media/${b.stampIconId}) center / contain no-repeat`;
+                  return (
+                    <div
+                      key={i}
+                      role="img"
+                      aria-label="Sello pendiente"
+                      className="aspect-square w-full"
+                      style={{ backgroundColor: b.fgColor, opacity: 0.35, mask, WebkitMask: mask }}
+                    />
+                  );
+                }
+                return (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={i}
+                    src={`/api/media/${filled ? b.stampIconId : b.stampEmptyIconId}`}
+                    alt={filled ? "Sello" : "Sello pendiente"}
+                    className="aspect-square w-full object-contain"
+                  />
+                );
+              }
               return (
                 <div
                   key={i}

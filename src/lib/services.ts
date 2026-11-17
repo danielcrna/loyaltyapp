@@ -149,7 +149,7 @@ export async function enrollCustomer(business: Business, input: EnrollInput) {
     const promos = await tx.promotion.findMany({
       where: { businessId: business.id, active: true, autoAssign: "NEW_MEMBERS" },
     });
-    for (const p of promos.filter((x) => isPromotionLive(x))) await createCoupon(tx, p, customer.id);
+    for (const p of promos.filter((x) => isPromotionLive(x))) await createCoupon(tx, p, customer.id, "auto");
     return tx.loyaltyCard.findUniqueOrThrow({ where: { id: card.id } });
   });
   return { card: result, created: true };
@@ -170,9 +170,10 @@ function couponExpiry(p: Promotion) {
   return fromDays ?? p.endsAt ?? null;
 }
 
-async function createCoupon(tx: Tx, p: Promotion, customerId: string) {
+async function createCoupon(tx: Tx, p: Promotion, customerId: string, source = "manual") {
   return tx.customerCoupon.create({
     data: {
+      source,
       code: newCouponCode(),
       authToken: newAuthToken(),
       promotionId: p.id,
@@ -183,7 +184,7 @@ async function createCoupon(tx: Tx, p: Promotion, customerId: string) {
 }
 
 /** Entrega un cupón de la promoción a cada cliente indicado (omite a quien ya tiene uno activo). */
-export async function issueCoupons(promotion: Promotion, customerIds: string[]) {
+export async function issueCoupons(promotion: Promotion, customerIds: string[], source = "manual") {
   if (!isPromotionLive(promotion)) throw new LoyaltyError("La promoción no está vigente");
   const already = await db.customerCoupon.findMany({
     where: { promotionId: promotion.id, customerId: { in: customerIds }, status: "ACTIVE" },
@@ -195,6 +196,7 @@ export async function issueCoupons(promotion: Promotion, customerIds: string[]) 
   if (targets.length) {
     await db.customerCoupon.createMany({
       data: targets.map((customerId) => ({
+        source,
         code: newCouponCode(),
         authToken: newAuthToken(),
         promotionId: promotion.id,
@@ -204,6 +206,50 @@ export async function issueCoupons(promotion: Promotion, customerIds: string[]) 
     });
   }
   return targets;
+}
+
+/**
+ * El cliente reclama el cupón de una promoción escaneando su QR.
+ * Una vez por cliente y promoción (un cupón revocado no cuenta), con límite total opcional.
+ */
+export async function claimPromotion(promotion: Promotion, customerId: string) {
+  if (!promotion.claimEnabled || !isPromotionLive(promotion)) throw new LoyaltyError("Esta promoción ya no está disponible");
+  return db.$transaction(async (tx) => {
+    // Serializa los reclamos de la misma promoción para respetar el límite
+    await tx.$queryRaw`SELECT id FROM "Promotion" WHERE id = ${promotion.id} FOR UPDATE`;
+    const existing = await tx.customerCoupon.findFirst({
+      where: { promotionId: promotion.id, customerId, status: { not: "VOID" } },
+    });
+    if (existing) return { coupon: existing, alreadyHad: true };
+    if (promotion.claimLimit) {
+      const claimed = await tx.customerCoupon.count({
+        where: { promotionId: promotion.id, source: "qr", status: { not: "VOID" } },
+      });
+      if (claimed >= promotion.claimLimit) throw new LoyaltyError("Se agotaron los cupones de esta promoción");
+    }
+    const coupon = await createCoupon(tx, promotion, customerId, "qr");
+    return { coupon, alreadyHad: false };
+  });
+}
+
+/** Revoca cupones activos (entregados por error o de prueba). Devuelve los cupones revocados. */
+export async function revokeCoupons(businessId: string, where: { couponId?: string; promotionId?: string }) {
+  const coupons = await db.customerCoupon.findMany({
+    where: {
+      status: "ACTIVE",
+      promotion: { businessId },
+      ...(where.couponId ? { id: where.couponId } : {}),
+      ...(where.promotionId ? { promotionId: where.promotionId } : {}),
+    },
+    select: { id: true, code: true, customerId: true },
+  });
+  if (coupons.length) {
+    await db.customerCoupon.updateMany({
+      where: { id: { in: coupons.map((c) => c.id) }, status: "ACTIVE" },
+      data: { status: "VOID", revokedAt: new Date() },
+    });
+  }
+  return coupons;
 }
 
 // ─────────────────────────── Operaciones del escáner ───────────────────────────
@@ -296,6 +342,7 @@ export async function redeemCoupon(ctx: StaffCtx, code: string) {
     });
     if (!coupon || coupon.promotion.businessId !== ctx.businessId) throw new LoyaltyError("Cupón no encontrado");
     if (coupon.status === "REDEEMED") throw new LoyaltyError("Este cupón ya fue canjeado");
+    if (coupon.status === "VOID") throw new LoyaltyError("Este cupón fue revocado por el negocio");
     if (coupon.status !== "ACTIVE") throw new LoyaltyError("Este cupón no es válido");
     if (coupon.expiresAt && coupon.expiresAt < new Date()) throw new LoyaltyError("Este cupón ya venció");
     if (coupon.promotion.startsAt && coupon.promotion.startsAt > new Date())
