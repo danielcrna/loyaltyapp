@@ -8,6 +8,7 @@ import {
   redeemCouponAction,
   redeemRewardAction,
   searchCustomersAction,
+  undoPurchaseAction,
   type CustomerMatch,
   type ScanCard,
   type ScanCoupon,
@@ -23,8 +24,13 @@ type Program = {
 };
 type Reward = { id: string; name: string; pointsCost: number };
 type Loc = { id: string; name: string };
-type Kind = "lookup" | "earn" | "redeem";
+type Kind = "lookup" | "earn" | "redeem" | "undo";
 type Message = { tone: "ok" | "error"; text: string; retry?: () => void };
+type EarnMeta = { requestId: string; purchaseCents: number };
+type LastEarn = EarnMeta & { headline: string; undoUntil: number };
+
+/** Segundos que el escáner ofrece "Deshacer" (el servidor acepta hasta 2 minutos). */
+const UNDO_SECONDS = 15;
 
 const money = (cents: number, currency: string) => new Intl.NumberFormat("es-MX", { style: "currency", currency }).format(cents / 100);
 
@@ -46,6 +52,14 @@ const NO_RESPONSE: Record<Kind, string> = {
   lookup: "Sin conexión con el servidor. Revisa el internet e intenta de nuevo.",
   earn: "No hubo respuesta del servidor. Reintenta: si ya se había registrado, no se duplica.",
   redeem: "No hubo respuesta del servidor. Reintenta: si ya se había canjeado, no se duplica.",
+  undo: "No hubo respuesta del servidor. Reintenta: no se deshace dos veces.",
+};
+
+const PENDING_TEXT: Record<Kind, string> = {
+  lookup: "Buscando tarjeta…",
+  earn: "Registrando…",
+  redeem: "Canjeando…",
+  undo: "Deshaciendo…",
 };
 
 export function Scanner({
@@ -64,7 +78,10 @@ export function Scanner({
   const [pending, startTransition] = useTransition();
   const [camera, setCamera] = useState(false);
   const [locationId, setLocationId] = useState<string>("");
-  const [earnLocked, setEarnLocked] = useState(false);
+  const [lastEarn, setLastEarn] = useState<LastEarn | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [pendingKind, setPendingKind] = useState<Kind>("lookup");
+  const earnLocked = lastEarn !== null;
   const lastCameraRead = useRef<{ code: string; at: number }>({ code: "", at: 0 });
 
   useEffect(() => {
@@ -84,12 +101,18 @@ export function Scanner({
       ? "Elige la sucursal para registrar movimientos."
       : null;
 
-  const handle = useCallback((r: ScanResult, kind: Kind) => {
+  const handle = useCallback((r: ScanResult, kind: Kind, earn?: EarnMeta) => {
     if (r.ok) {
       setResult(r.data);
       setMessage(r.message ? { tone: "ok", text: r.message } : null);
-      if (kind === "earn") setEarnLocked(true);
-      if (kind === "lookup") setEarnLocked(false);
+      if (kind === "earn" && earn) {
+        setLastEarn({ ...earn, headline: r.message ?? "Registrado", undoUntil: Date.now() + UNDO_SECONDS * 1000 });
+        setShowSuccess(true);
+      }
+      if (kind === "lookup" || kind === "undo") {
+        setLastEarn(null);
+        setShowSuccess(false);
+      }
       buzz(r.message ? 80 : 30);
     } else {
       setMessage({ tone: "error", text: r.error });
@@ -98,20 +121,30 @@ export function Scanner({
   }, []);
 
   /** Ejecuta una llamada al servidor; si no hay respuesta, ofrece reintentar la misma llamada. */
-  const run: (exec: () => Promise<ScanResult>, kind: Kind) => void = useCallback(
-    (exec: () => Promise<ScanResult>, kind: Kind) => {
+  const run: (exec: () => Promise<ScanResult>, kind: Kind, earn?: EarnMeta) => void = useCallback(
+    (exec: () => Promise<ScanResult>, kind: Kind, earn?: EarnMeta) => {
       setMessage(null);
+      setPendingKind(kind);
       startTransition(async () => {
         try {
-          handle(await exec(), kind);
+          handle(await exec(), kind, earn);
         } catch {
-          setMessage({ tone: "error", text: NO_RESPONSE[kind], retry: () => run(exec, kind) });
+          setMessage({ tone: "error", text: NO_RESPONSE[kind], retry: () => run(exec, kind, earn) });
           buzz([60, 60, 60]);
         }
       });
     },
     [handle],
   );
+
+  const nextCustomer = () => {
+    setResult(null);
+    setMessage(null);
+    setLastEarn(null);
+    setShowSuccess(false);
+    lastCameraRead.current = { code: "", at: 0 };
+    setCamera(true);
+  };
 
   const lookup = useCallback(
     (code: string) => {
@@ -134,11 +167,12 @@ export function Scanner({
 
   const loc = locationId || null;
   const actionsDisabled = pending || blockedReason !== null;
+  const success = result?.kind === "card" && lastEarn !== null && showSuccess ? { card: result, earn: lastEarn } : null;
 
   return (
     <div className="mx-auto max-w-md space-y-4">
       <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-        {pending ? "Procesando" : (message?.text ?? "")}
+        {pending ? PENDING_TEXT[pendingKind] : (message?.text ?? "")}
       </p>
 
       {locations.length > 1 && (
@@ -186,7 +220,7 @@ export function Scanner({
         </>
       )}
 
-      {message && (
+      {message && !(success && message.tone === "ok") && (
         <div
           className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold ${
             message.tone === "ok" ? "bg-emerald-100 text-emerald-900" : "bg-red-100 text-red-800"
@@ -206,13 +240,31 @@ export function Scanner({
         </div>
       )}
 
-      {pending && <p className="text-center text-sm text-stone-500">Procesando…</p>}
+      {pending && <p className="text-center text-sm font-semibold text-stone-600">{PENDING_TEXT[pendingKind]}</p>}
 
-      {result && blockedReason && (
+      {result && !success && blockedReason && (
         <p className="rounded-xl bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-900">{blockedReason}</p>
       )}
 
-      {result?.kind === "card" && (
+      {success && (
+        <SuccessPanel
+          card={success.card}
+          earn={success.earn}
+          currency={program.currency}
+          busy={pending}
+          onUndo={() => {
+            const id = success.earn.requestId;
+            run(() => undoPurchaseAction(id), "undo");
+          }}
+          onNext={nextCustomer}
+          onShowCard={() => {
+            setShowSuccess(false);
+            setMessage(null);
+          }}
+        />
+      )}
+
+      {result?.kind === "card" && !success && (
         <CardPanel
           card={result}
           program={program}
@@ -220,12 +272,12 @@ export function Scanner({
           disabled={actionsDisabled}
           earnLocked={earnLocked}
           onUnlockEarn={() => {
-            setEarnLocked(false);
+            setLastEarn(null);
             setMessage(null);
           }}
           onEarn={(cents) => {
-            const id = newRequestId();
-            run(() => purchaseAction(result.cardId, cents, loc, id), "earn");
+            const earn = { requestId: newRequestId(), purchaseCents: cents };
+            run(() => purchaseAction(result.cardId, cents, loc, earn.requestId), "earn", earn);
           }}
           onRedeemReward={(rewardId) => {
             const id = newRequestId();
@@ -251,19 +303,9 @@ export function Scanner({
           }}
         />
       )}
-      {result && (
-        <button
-          type="button"
-          onClick={() => {
-            setResult(null);
-            setMessage(null);
-            setEarnLocked(false);
-            lastCameraRead.current = { code: "", at: 0 };
-            setCamera(true);
-          }}
-          className="w-full rounded-xl border border-stone-300 bg-white py-3 font-semibold"
-        >
-          Escanear otro
+      {result && !success && (
+        <button type="button" onClick={nextCustomer} className="w-full rounded-xl border border-stone-300 bg-white py-3 font-semibold">
+          Siguiente cliente
         </button>
       )}
     </div>
@@ -510,7 +552,9 @@ function CardPanel({
         <div className="min-w-0">
           <div className="truncate text-lg font-bold">{card.customerName}</div>
           <div className="text-xs text-stone-500">
-            {card.visits} visitas · última {card.lastVisit}
+            {card.visits === 0
+              ? "Sin visitas registradas"
+              : `${card.visits} ${card.visits === 1 ? "visita" : "visitas"} · última ${card.lastVisit}`}
           </div>
         </div>
         <div className="shrink-0 text-right">
@@ -524,7 +568,7 @@ function CardPanel({
         <div className="text-sm font-semibold">{isStamps ? "Registrar visita" : "Registrar compra"}</div>
         {earnLocked ? (
           <div className="flex items-center justify-between gap-3 rounded-lg bg-emerald-50 px-3 py-2">
-            <span className="text-sm font-semibold text-emerald-900">Registrado</span>
+            <span className="text-sm font-semibold text-emerald-900">{isStamps ? "Visita registrada" : "Compra registrada"}</span>
             <button
               type="button"
               onClick={onUnlockEarn}
@@ -564,7 +608,7 @@ function CardPanel({
               disabled={disabled || (needsAmount && cents <= 0)}
               className="w-full rounded-xl bg-brand-600 py-3 text-base font-bold text-white disabled:opacity-50"
             >
-              {isStamps ? "+1 sello" : "Sumar"}
+              {isStamps ? "+1 sello" : program.type === "POINTS" ? "Sumar puntos" : "Sumar al monedero"}
             </button>
           </form>
         )}
@@ -577,7 +621,8 @@ function CardPanel({
           confirmLabel={`Confirmar canje: ${program.stampReward}`}
           className="w-full rounded-xl bg-emerald-600 py-3 font-bold text-white"
         >
-          Canjear: {program.stampReward} ({card.rewardsAvailable})
+          Canjear {program.stampReward}
+          {card.rewardsAvailable > 1 && <span className="font-normal"> · {card.rewardsAvailable} disponibles</span>}
         </ConfirmButton>
       )}
 
@@ -661,6 +706,85 @@ function CardPanel({
         </div>
       )}
     </div>
+  );
+}
+
+function useSecondsLeft(until: number) {
+  const [now, setNow] = useState(() => Date.now());
+  const left = Math.max(0, Math.ceil((until - now) / 1000));
+  useEffect(() => {
+    if (left <= 0) return;
+    const t = setTimeout(() => setNow(Date.now()), 1000);
+    return () => clearTimeout(t);
+  }, [left, until]);
+  return left;
+}
+
+/** Lo que ve el cajero justo después de registrar: el resultado, el saldo nuevo y el siguiente paso. */
+function SuccessPanel({
+  card,
+  earn,
+  currency,
+  busy,
+  onUndo,
+  onNext,
+  onShowCard,
+}: {
+  card: ScanCard;
+  earn: LastEarn;
+  currency: string;
+  busy: boolean;
+  onUndo: () => void;
+  onNext: () => void;
+  onShowCard: () => void;
+}) {
+  const secondsLeft = useSecondsLeft(earn.undoUntil);
+  const nextRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    nextRef.current?.focus({ preventScroll: true });
+  }, []);
+  return (
+    <section aria-labelledby="scan-success" className="space-y-5 rounded-2xl border border-emerald-200 bg-white p-5 text-center shadow-sm">
+      <div className="space-y-1">
+        <p id="scan-success" className="text-3xl font-black text-balance text-emerald-800">
+          {earn.headline}
+        </p>
+        <p className="text-base font-semibold text-stone-900">{card.customerName}</p>
+        {earn.purchaseCents > 0 && <p className="text-sm text-stone-600">Compra de {money(earn.purchaseCents, currency)}</p>}
+      </div>
+
+      <div className="rounded-xl bg-stone-50 py-3">
+        <div className="text-xs font-semibold text-stone-500 uppercase">{card.balanceLabel}</div>
+        <div className="text-2xl font-bold tabular-nums">{card.balanceValue}</div>
+        {card.secondary && <div className="text-sm font-semibold text-emerald-800">{card.secondary}</div>}
+      </div>
+
+      <button
+        ref={nextRef}
+        type="button"
+        onClick={onNext}
+        className="w-full rounded-xl bg-stone-900 py-4 text-lg font-bold text-white focus-visible:ring-2 focus-visible:ring-stone-900 focus-visible:ring-offset-2 focus-visible:outline-none"
+      >
+        Siguiente cliente
+      </button>
+
+      {secondsLeft > 0 ? (
+        <button
+          type="button"
+          onClick={onUndo}
+          disabled={busy}
+          className="w-full rounded-xl border border-stone-300 bg-white py-3 font-semibold text-stone-800 disabled:opacity-50"
+        >
+          Deshacer <span className="font-normal text-stone-500 tabular-nums">({secondsLeft} s)</span>
+        </button>
+      ) : (
+        <p className="text-sm text-stone-600">¿Hubo un error? Pide al encargado un ajuste en el panel.</p>
+      )}
+
+      <button type="button" onClick={onShowCard} className="text-sm font-semibold text-stone-700 underline underline-offset-4">
+        Ver tarjeta y canjes
+      </button>
+    </section>
   );
 }
 

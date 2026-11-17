@@ -8,7 +8,15 @@ import { hasActiveAccess } from "@/lib/billing";
 import { parseScannedCode } from "@/lib/codes";
 import { formatDate, formatMoney } from "@/lib/format";
 import { balanceSummary } from "@/lib/loyalty";
-import { LoyaltyError, recordPurchase, redeemCashback, redeemCoupon, redeemReward } from "@/lib/services";
+import {
+  LoyaltyError,
+  recordPurchase,
+  redeemCashback,
+  redeemCoupon,
+  redeemReward,
+  undoKey,
+  undoPurchase,
+} from "@/lib/services";
 import { activeCouponsFor, syncCard, syncCoupon } from "@/lib/wallet/sync";
 
 export type ScanCard = {
@@ -95,6 +103,8 @@ const isDuplicateRequest = (e: unknown) =>
  */
 async function replay(businessId: string, requestId?: string | null): Promise<ScanResult | null> {
   if (!requestId) return null;
+  const undone = await db.transaction.findUnique({ where: { requestId: undoKey(requestId) } });
+  if (undone && undone.businessId === businessId) return { ok: false, error: "Este registro se deshizo; no se volvió a registrar." };
   const prev = await db.transaction.findUnique({ where: { requestId } });
   if (!prev || prev.businessId !== businessId) return null;
   return { ok: true, data: await cardData(prev.cardId), message: `Ya estaba registrado: ${prev.description}` };
@@ -119,17 +129,17 @@ export async function lookupAction(raw: string): Promise<ScanResult> {
   try {
     const user = await staff();
     const parsed = parseScannedCode(raw);
-    if (!parsed) throw new LoyaltyError("Código no reconocido");
+    if (!parsed) throw new LoyaltyError("Código no reconocido. Revisa que sea el QR de una tarjeta de lealtad o de un cupón.");
     if (parsed.kind === "card") {
       const card = await db.loyaltyCard.findUnique({ where: { serial: parsed.value } });
-      if (!card || card.businessId !== user.business.id) throw new LoyaltyError("Esta tarjeta no pertenece a tu negocio");
+      if (!card || card.businessId !== user.business.id) throw new LoyaltyError("Esta tarjeta es de otro negocio; no se puede usar aquí.");
       return { ok: true, data: await cardData(card.id) };
     }
     const coupon = await db.customerCoupon.findUnique({
       where: { code: parsed.value },
       include: { promotion: true, customer: true },
     });
-    if (!coupon || coupon.promotion.businessId !== user.business.id) throw new LoyaltyError("Este cupón no pertenece a tu negocio");
+    if (!coupon || coupon.promotion.businessId !== user.business.id) throw new LoyaltyError("Este cupón es de otro negocio; no se puede usar aquí.");
     const expired = coupon.expiresAt && coupon.expiresAt < new Date();
     const valid = coupon.status === "ACTIVE" && !expired;
     return {
@@ -216,9 +226,23 @@ export async function purchaseAction(
               ? `¡Tarjeta completa! Ganó: ${b.stampReward}`
               : r.delta.stampsDelta > 0
                 ? "+1 sello"
-                : "Visita registrada (no alcanzó la compra mínima para sello)";
+                : `Visita registrada sin sello: la compra fue menor a ${formatMoney(b.stampMinPurchase, b.currency)}`;
       return { ok: true, data: await cardData(cardId), message: msg };
     });
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Deshace una compra o visita recién registrada desde este escáner. */
+export async function undoPurchaseAction(requestId: string): Promise<ScanResult> {
+  try {
+    const user = await guard();
+    const id = cleanId(requestId);
+    if (!id) throw new LoyaltyError("No se encontró el registro para deshacer");
+    const r = await undoPurchase({ staffId: user.id, businessId: user.business.id }, id);
+    after(() => syncCard(r.cardId));
+    return { ok: true, data: await cardData(r.cardId), message: `Se deshizo: ${r.description}` };
   } catch (e) {
     return fail(e);
   }
