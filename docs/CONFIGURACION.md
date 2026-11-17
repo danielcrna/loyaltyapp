@@ -7,13 +7,20 @@ Mientras falte alguna integración, la plataforma funciona igual con la tarjeta 
 
 ## 1. Dominio, base de datos y hospedaje
 
-1. Compra un dominio (p. ej. `lealt.io`). Apple y Google necesitan una URL **HTTPS** pública y estable.
+1. Necesitas una URL **HTTPS** pública y estable (Apple y Google la usan), pero **no hace falta comprar un dominio nuevo**:
+   un subdominio de un dominio que ya tengas funciona igual, p. ej. `lealtio.wabistudio.com.mx`.
+   - En el panel DNS donde administras `wabistudio.com.mx` crea un registro para `lealtio`:
+     `A` → IP de tu servidor (VPS/Oracle Cloud), o `CNAME` → el host que te dé Render/Vercel.
+   - Apple y Google no verifican la propiedad del dominio para los pases; solo exigen HTTPS válido (Caddy, Render y Vercel lo dan gratis).
+   - **Elige bien desde el inicio:** la URL queda grabada en cada pase de Apple instalado. Si después compras `lealt.io`,
+     deja el subdominio viejo apuntando al mismo servidor para que esos pases sigan actualizándose.
+   - Evita URLs temporales (túneles tipo `trycloudflare.com` o ngrok gratuito) salvo para pruebas de un día: cambian y rompen los pases.
 2. Base de datos: crea un proyecto gratis en [Neon](https://neon.tech) y copia la cadena de conexión a `DATABASE_URL`
    (o usa el Postgres de `docker-compose.yml` si hospedas en tu propio servidor).
 3. Variables mínimas (copia `.env.example` a `.env`):
    ```
    DATABASE_URL=...
-   APP_URL=https://lealt.io
+   APP_URL=https://lealtio.wabistudio.com.mx
    NEXT_PUBLIC_APP_NAME=Lealt.io
    SESSION_SECRET=<openssl rand -hex 32>
    CRON_SECRET=<openssl rand -hex 16>
@@ -26,7 +33,7 @@ Mientras falte alguna integración, la plataforma funciona igual con la tarjeta 
      ```
      Pon delante [Caddy](https://caddyserver.com) para HTTPS automático:
      ```
-     lealt.io {
+     lealtio.wabistudio.com.mx {
        reverse_proxy localhost:3000
      }
      ```
@@ -63,7 +70,7 @@ Notas:
 ### 3.1 Crear el Pass Type ID y su certificado
 
 1. En [developer.apple.com](https://developer.apple.com/account) → *Certificates, IDs & Profiles → Identifiers → +* →
-   **Pass Type IDs** → identificador tipo `pass.io.lealt.loyalty`. Ese valor va en `APPLE_PASS_TYPE_ID`.
+   **Pass Type IDs** → identificador tipo `pass.mx.com.wabistudio.lealtio` (formato DNS invertido; no tiene que coincidir con tu URL ni ser un dominio tuyo, pero **no se puede cambiar** sin reemitir todos los pases). Ese valor va en `APPLE_PASS_TYPE_ID`.
 2. Tu **Team ID** (10 caracteres) está en *Membership details* → `APPLE_TEAM_ID`.
 3. Genera la llave y la solicitud de firma (CSR) en tu computadora:
    ```bash
@@ -108,7 +115,7 @@ Notas:
    Copia cada `price_...` a `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_BUSINESS`.
    Ajusta nombres, precios y límites en `src/lib/plans.ts` para que coincidan.
 3. *Desarrolladores → Claves API*: `STRIPE_SECRET_KEY`.
-4. *Desarrolladores → Webhooks → Agregar endpoint*: `https://lealt.io/api/stripe/webhook` con los eventos
+4. *Desarrolladores → Webhooks → Agregar endpoint*: `https://lealtio.wabistudio.com.mx/api/stripe/webhook` con los eventos
    `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`.
    Copia el *signing secret* → `STRIPE_WEBHOOK_SECRET`.
 5. *Configuración → Portal de clientes*: actívalo y permite cambiar entre tus 3 productos, actualizar tarjeta y cancelar.
@@ -130,7 +137,7 @@ de inactividad (+ cupón "Recordatorio de inactividad"). Prográmalo una vez al 
 - **Vercel:** `vercel.json` ya lo programa (Vercel envía `CRON_SECRET` automáticamente si defines esa variable).
 - **cron-job.org** o `crontab` en tu VPS:
   ```bash
-  0 15 * * * curl -fsS -X POST -H "Authorization: Bearer TU_CRON_SECRET" https://lealt.io/api/cron
+  0 15 * * * curl -fsS -X POST -H "Authorization: Bearer TU_CRON_SECRET" https://lealtio.wabistudio.com.mx/api/cron
   ```
 
 ---
