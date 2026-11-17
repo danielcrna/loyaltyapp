@@ -53,6 +53,9 @@ model Business {
   stampsRequired    Int         @default(10) // sellos para ganar la recompensa
   stampReward       String      @default("Una bebida gratis")
   stampMinPurchase  Int         @default(0) // compra mínima (centavos) para otorgar sello; 0 = por visita
+  // Niveles intermedios del programa de sellos: [{ "stamps": 5, "reward": "Americano chico" }].
+  // Se canjean descontando esos sellos; el nivel final es stampsRequired / stampReward.
+  stampTiers        Json        @default("[]")
   welcomeBonus      Int         @default(0) // puntos / sellos / centavos al inscribirse
   minRedeemCashback Int         @default(0) // saldo mínimo (centavos) para usar monedero
   programTerms      String      @default("")

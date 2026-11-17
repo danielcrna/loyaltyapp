@@ -10,6 +10,7 @@ Plataforma multi-negocio para vender, como servicio hospedado, programas de leal
 **Para los negocios (panel `/dashboard`)**
 - Registro con prueba gratis y suscripción mensual con Stripe (3 planes con límites de sucursales, clientes y usuarios).
 - Programa a elegir: **sellos/visitas**, **puntos** (con catálogo de recompensas) o **monedero electrónico** (cashback), con bono de bienvenida.
+- Sellos con **1 o 2 reglas**: p. ej. 5 sellos = americano chico (canje opcional que descuenta esos sellos) y 10 sellos = bebida de tu elección (al completar la tarjeta). El cliente decide en caja si canjea o sigue acumulando, y recibe un aviso en su wallet al alcanzar cada nivel.
 - Diseño de tarjeta: logo, colores e imagen de franja; vista previa en vivo. Sellos con diseño **predeterminado** o **personalizado** (imagen propia para sello obtenido y, opcionalmente, para sello pendiente); la franja de sellos se genera automáticamente.
 - **Clientes (CRM):** nombre, teléfono, correo, cumpleaños, consentimiento de promociones, historial, ajustes manuales, búsqueda, exportación CSV y eliminación (derechos ARCO).
 - **Cupones y promociones** con QR, vigencia y entrega manual, masiva o automática (al inscribirse, en el cumpleaños o por inactividad).

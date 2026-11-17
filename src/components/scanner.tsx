@@ -16,6 +16,7 @@ import {
 type Program = {
   type: "POINTS" | "CASHBACK" | "STAMPS";
   stampReward: string;
+  stampRules: { stamps: number; reward: string; final?: boolean }[];
   stampMinPurchase: number;
   currency: string;
 };
@@ -307,6 +308,41 @@ function CardPanel({
         >
           Canjear: {program.stampReward} ({card.rewardsAvailable})
         </button>
+      )}
+
+      {program.type === "STAMPS" && program.stampRules.length > 1 && (
+        <div className="space-y-2">
+          <div className="text-sm font-semibold">Niveles de recompensa</div>
+          {program.stampRules.map((r) => {
+            const reachable = !r.final && card.stamps >= r.stamps;
+            return r.final ? (
+              <div key={r.stamps} className="flex justify-between rounded-lg border border-dashed border-stone-300 px-3 py-2 text-sm text-stone-600">
+                <span>
+                  {r.reward} <span className="text-xs">(al completar)</span>
+                </span>
+                <span className="font-semibold">
+                  {card.stamps}/{r.stamps}
+                </span>
+              </div>
+            ) : (
+              <button
+                key={r.stamps}
+                disabled={disabled || !reachable}
+                onClick={() => {
+                  if (window.confirm(`¿Canjear "${r.reward}"? Se descontarán ${r.stamps} sellos y le quedarán ${card.stamps - r.stamps}.`))
+                    onAction((loc) => redeemRewardAction(card.cardId, undefined, loc, r.stamps));
+                }}
+                className="flex w-full justify-between rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900 disabled:border-stone-200 disabled:bg-white disabled:font-normal disabled:text-stone-400"
+              >
+                <span>Canjear: {r.reward}</span>
+                <span>−{r.stamps} sellos</span>
+              </button>
+            );
+          })}
+          {program.stampRules.some((r) => !r.final && card.stamps >= r.stamps) && (
+            <p className="text-xs text-stone-500">El cliente puede canjear ahora o seguir acumulando para la recompensa final.</p>
+          )}
+        </div>
       )}
 
       {program.type === "POINTS" && rewards.length > 0 && (

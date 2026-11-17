@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
+import { rulesSummary, stampRules } from "@/lib/loyalty";
 import { hasActiveAccess } from "@/lib/billing";
 import { formatMoney } from "@/lib/format";
 import { CardView } from "@/components/card-view";
@@ -24,7 +25,9 @@ export default async function JoinPage({ params }: Props) {
   const active = hasActiveAccess(b);
   const pitch =
     b.programType === "STAMPS"
-      ? `Junta ${b.stampsRequired} sellos y llévate ${b.stampReward.toLowerCase()}.`
+      ? stampRules(b).length > 1
+        ? `${rulesSummary(stampRules(b))}. Canjea o sigue acumulando.`
+        : `Junta ${b.stampsRequired} sellos y llévate ${b.stampReward.toLowerCase()}.`
       : b.programType === "POINTS"
         ? `Gana puntos en cada compra y cámbialos por productos.`
         : `Recibe ${b.cashbackPercent}% de tus compras en tu monedero electrónico.`;

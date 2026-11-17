@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { rulesSummary, stampRules } from "@/lib/loyalty";
 import { publicUrl } from "@/lib/config";
 import { QR } from "@/components/qr";
 import { PrintButton } from "@/components/print-button";
@@ -13,7 +14,9 @@ export default async function PosterPage({ params }: { params: Promise<{ slug: s
   const url = publicUrl(`/n/${b.slug}`);
   const pitch =
     b.programType === "STAMPS"
-      ? `Junta ${b.stampsRequired} sellos y llévate ${b.stampReward.toLowerCase()}`
+      ? stampRules(b).length > 1
+        ? rulesSummary(stampRules(b))
+        : `Junta ${b.stampsRequired} sellos y llévate ${b.stampReward.toLowerCase()}`
       : b.programType === "POINTS"
         ? "Gana puntos en cada compra"
         : `Recibe ${b.cashbackPercent}% de regreso en tu monedero`;

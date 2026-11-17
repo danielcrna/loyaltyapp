@@ -67,6 +67,7 @@ export async function renderStampStrip(opts: {
   background?: Buffer | null;
   stampImage?: Buffer | null;
   emptyImage?: Buffer | null;
+  tierMarks?: number[]; // posiciones (1-based) de los niveles intermedios: se marcan con un anillo
 }) {
   const { width, height, stamps, required, bg, fg, accent } = opts;
   const n = Math.max(1, Math.min(required, 20));
@@ -96,6 +97,10 @@ export async function renderStampStrip(opts: {
     const cx = padX + cellW * col + cellW / 2;
     const cy = cellH * row + cellH / 2;
     const filled = i < stamps;
+    if (opts.tierMarks?.includes(i + 1)) {
+      // Anillo punteado que señala un nivel de recompensa intermedio
+      circles += `<circle cx="${cx}" cy="${cy}" r="${r * 1.32}" fill="none" stroke="${esc(accent)}" stroke-width="${Math.max(2, r * 0.1)}" stroke-dasharray="${r * 0.28} ${r * 0.18}"/>`;
+    }
     if (custom) {
       icons.push({
         input: filled ? filledIcon! : emptyIcon!,

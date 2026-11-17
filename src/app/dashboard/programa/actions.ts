@@ -33,6 +33,16 @@ export async function saveProgramAction(_prev: ActionResult, fd: FormData): Prom
   if (!parsed.success) return { error: `Revisa el campo "${parsed.error.issues[0].path.join(".")}": ${parsed.error.issues[0].message}` };
   const d = parsed.data;
   const welcomeRaw = d.welcomeBonus ?? "0";
+  // Reglas del programa de sellos: 1 regla (solo recompensa final) o 2 reglas (nivel intermedio + final)
+  let stampTiers: { stamps: number; reward: string }[] = [];
+  if (fd.get("stampRuleCount") === "2") {
+    const tierStamps = Math.floor(Number(fd.get("tierStamps")));
+    const tierReward = String(fd.get("tierReward") ?? "").trim().slice(0, 60);
+    if (!tierReward) return { error: "Escribe la recompensa del primer nivel" };
+    if (!(tierStamps >= 1 && tierStamps < d.stampsRequired))
+      return { error: `Los sellos del primer nivel deben ser entre 1 y ${d.stampsRequired - 1} (menos que el total de la tarjeta)` };
+    stampTiers = [{ stamps: tierStamps, reward: tierReward }];
+  }
   await db.business.update({
     where: { id: user.business.id },
     data: {
@@ -43,6 +53,7 @@ export async function saveProgramAction(_prev: ActionResult, fd: FormData): Prom
       stampsRequired: d.stampsRequired,
       stampReward: d.stampReward || "Una recompensa",
       stampMinPurchase: parseMoneyToCents(d.stampMinPurchase),
+      stampTiers,
       // En monedero el bono de bienvenida es dinero; en puntos/sellos, una cantidad entera
       welcomeBonus: d.programType === "CASHBACK" ? parseMoneyToCents(welcomeRaw) : Math.max(0, Math.floor(Number(welcomeRaw) || 0)),
       minRedeemCashback: parseMoneyToCents(d.minRedeemCashback),

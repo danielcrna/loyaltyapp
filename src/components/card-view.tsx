@@ -1,5 +1,5 @@
 import type { Business, LoyaltyCard } from "@prisma/client";
-import { balanceSummary } from "@/lib/loyalty";
+import { balanceSummary, stampRewardLine, stampRules } from "@/lib/loyalty";
 import { formatMoney } from "@/lib/format";
 
 type Props = {
@@ -21,6 +21,7 @@ type Props = {
     | "stampMinPurchase"
     | "minRedeemCashback"
     | "currency"
+    | "stampTiers"
     | "stampStyle"
     | "stampIconId"
     | "stampEmptyIconId"
@@ -34,6 +35,8 @@ type Props = {
 export function CardView({ business: b, card, customerName = "Nombre del cliente", qr }: Props) {
   const balances = card ?? { points: 120, cashbackCents: 4550, stamps: Math.min(3, b.stampsRequired), rewardsAvailable: 0, visits: 3 };
   const summary = balanceSummary(b, balances, (c) => formatMoney(c, b.currency));
+  const rules = stampRules(b);
+  const tierMarks = new Set(rules.filter((r) => !r.final).map((r) => r.stamps));
   return (
     <div className="mx-auto w-full max-w-sm overflow-hidden rounded-2xl shadow-xl" style={{ backgroundColor: b.bgColor, color: b.fgColor }}>
       <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-3">
@@ -58,6 +61,9 @@ export function CardView({ business: b, card, customerName = "Nombre del cliente
           <div className={`grid gap-2 ${b.stampsRequired > 10 ? "grid-cols-10" : "grid-cols-5"}`}>
             {Array.from({ length: b.stampsRequired }).map((_, i) => {
               const filled = i < balances.stamps;
+              const ring = tierMarks.has(i + 1)
+                ? { outline: `2px dashed ${b.labelColor}`, outlineOffset: "3px", borderRadius: "9999px" }
+                : undefined;
               if (b.stampStyle === "custom" && b.stampIconId) {
                 if (!filled && !b.stampEmptyIconId) {
                   // Igual que en el pase: silueta del sello en el color del texto, semitransparente
@@ -68,7 +74,7 @@ export function CardView({ business: b, card, customerName = "Nombre del cliente
                       role="img"
                       aria-label="Sello pendiente"
                       className="aspect-square w-full"
-                      style={{ backgroundColor: b.fgColor, opacity: 0.35, mask, WebkitMask: mask }}
+                      style={{ backgroundColor: b.fgColor, opacity: 0.35, mask, WebkitMask: mask, ...ring }}
                     />
                   );
                 }
@@ -79,6 +85,7 @@ export function CardView({ business: b, card, customerName = "Nombre del cliente
                     src={`/api/media/${filled ? b.stampIconId : b.stampEmptyIconId}`}
                     alt={filled ? "Sello" : "Sello pendiente"}
                     className="aspect-square w-full object-contain"
+                    style={ring}
                   />
                 );
               }
@@ -90,6 +97,7 @@ export function CardView({ business: b, card, customerName = "Nombre del cliente
                     borderColor: filled ? b.labelColor : `${b.fgColor}88`,
                     backgroundColor: filled ? b.labelColor : "transparent",
                     color: b.bgColor,
+                    ...ring,
                   }}
                 >
                   {filled ? "✓" : ""}
@@ -121,12 +129,22 @@ export function CardView({ business: b, card, customerName = "Nombre del cliente
           <div className="text-[10px] font-semibold uppercase" style={{ color: b.labelColor }}>
             {b.programType === "STAMPS" ? "Recompensa" : "Visitas"}
           </div>
-          <div className="truncate">
-            {b.programType === "STAMPS" ? (balances.rewardsAvailable > 0 ? `${balances.rewardsAvailable} lista(s) 🎉` : b.stampReward) : balances.visits}
+          <div className="line-clamp-2">
+            {b.programType === "STAMPS" ? stampRewardLine(rules, balances) : balances.visits}
           </div>
         </div>
       </div>
       {qr && <div className="flex justify-center px-4 pt-2 pb-5"><div className="rounded-xl bg-white p-3">{qr}</div></div>}
+      {b.programType === "STAMPS" && rules.length > 1 && (
+        <div className="mx-4 mb-3 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: `${b.fgColor}14` }}>
+          {rules.map((r) => (
+            <div key={r.stamps} className="flex justify-between gap-2">
+              <span style={{ color: b.labelColor }}>{r.stamps} sellos</span>
+              <span className="truncate">{r.reward}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="px-4 pb-3 text-center text-[10px] opacity-60">{b.programName}</div>
     </div>
   );

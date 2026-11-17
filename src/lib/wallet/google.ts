@@ -3,7 +3,7 @@ import { GoogleAuth } from "google-auth-library";
 import { SignJWT, importPKCS8 } from "jose";
 import type { Business, Customer, CustomerCoupon, LoyaltyCard, Promotion } from "@prisma/client";
 import { config, publicUrl } from "../config";
-import { balanceSummary } from "../loyalty";
+import { balanceSummary, rulesSummary, stampRewardLine, stampRules } from "../loyalty";
 import { formatDate, formatMoney } from "../format";
 import type { BusinessWithMedia } from "./apple";
 
@@ -122,6 +122,14 @@ export function buildLoyaltyObject(
 
   const textModules = [];
   if (card.lastMessage) textModules.push({ id: "news", header: "Novedades", body: card.lastMessage });
+  if (business.programType === "STAMPS") {
+    const rules = stampRules(business);
+    textModules.push({
+      id: "rewards",
+      header: `Recompensa: ${stampRewardLine(rules, card)}`.slice(0, 60),
+      body: rulesSummary(rules),
+    });
+  }
   for (const c of activeCoupons.slice(0, 5)) {
     textModules.push({
       id: `coupon_${c.code}`,
@@ -141,7 +149,9 @@ export function buildLoyaltyObject(
       ? {
           secondaryLoyaltyPoints: { label: "Recompensas", balance: { int: card.rewardsAvailable } },
           heroImage: img(
-            publicUrl(`/api/img/stamps/${card.serial}?s=${card.stamps}&r=${business.stampsRequired}&v=${business.googleClassVersion}`),
+            publicUrl(
+              `/api/img/stamps/${card.serial}?s=${card.stamps}&r=${business.stampsRequired}&v=${business.googleClassVersion}`,
+            ),
             `${card.stamps} de ${business.stampsRequired} sellos`,
           ),
         }

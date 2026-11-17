@@ -95,3 +95,39 @@ describe("formato", () => {
     expect(slugify("Café La Ñora & Co.")).toBe("cafe-la-nora-co");
   });
 });
+
+describe("niveles de sellos", () => {
+  // Importación diferida para mantener los tests anteriores intactos
+  it("limpia niveles inválidos y ordena", async () => {
+    const { parseStampTiers } = await import("@/lib/loyalty");
+    expect(
+      parseStampTiers(
+        [{ stamps: 7, reward: "Pan" }, { stamps: 5, reward: "Americano" }, { stamps: 10, reward: "Igual al total" }, { stamps: 5, reward: "Duplicado" }, { stamps: 3, reward: "" }],
+        10,
+      ),
+    ).toEqual([{ stamps: 5, reward: "Americano" }, { stamps: 7, reward: "Pan" }]);
+    expect(parseStampTiers("basura", 10)).toEqual([]);
+  });
+
+  it("detecta el nivel intermedio alcanzado y el estado del cliente", async () => {
+    const { stampRules, tiersReached, stampStatus } = await import("@/lib/loyalty");
+    const rules = stampRules({ stampTiers: [{ stamps: 5, reward: "Americano chico" }], stampsRequired: 10, stampReward: "Bebida gratis" });
+    expect(tiersReached(rules, 4, 5).map((t) => t.reward)).toEqual(["Americano chico"]);
+    expect(tiersReached(rules, 5, 6)).toEqual([]);
+    const st = stampStatus(rules, { stamps: 6, rewardsAvailable: 0 });
+    expect(st.available.map((t) => t.reward)).toEqual(["Americano chico"]);
+    expect(st.next.reward).toBe("Bebida gratis");
+    expect(st.remaining).toBe(4);
+  });
+
+  it("canjear el nivel intermedio descuenta sus sellos; seguir acumulando completa la tarjeta", async () => {
+    const { computeRedeemTier, stampRules } = await import("@/lib/loyalty");
+    const rules = stampRules({ stampTiers: [{ stamps: 5, reward: "Americano chico" }], stampsRequired: 10, stampReward: "Bebida gratis" });
+    const card = { ...empty, stamps: 7 };
+    expect(applyDelta(card, computeRedeemTier(card, rules[0])).stamps).toBe(2);
+    expect(() => computeRedeemTier({ ...empty, stamps: 4 }, rules[0])).toThrow(LoyaltyError);
+    expect(() => computeRedeemTier(card, rules[1])).toThrow(LoyaltyError);
+    const full = { ...empty, stamps: 9 };
+    expect(applyDelta(full, computeEarn({ ...base, stampsRequired: 10 }, full, 0))).toEqual({ ...empty, stamps: 0, rewardsAvailable: 1 });
+  });
+});

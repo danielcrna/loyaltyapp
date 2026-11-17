@@ -153,8 +153,13 @@ export async function purchaseAction(cardId: string, purchaseCents: number, loca
   try {
     const user = await guard();
     const r = await recordPurchase({ staffId: user.id, businessId: user.business.id, locationId: locationId || null }, cardId, purchaseCents);
-    after(() => syncCard(cardId, { notifyBalance: true }));
     const b = user.business;
+    after(() =>
+      syncCard(cardId, {
+        notifyBalance: true,
+        ...(r.milestone ? { message: { title: b.name, body: r.milestone } } : {}),
+      }),
+    );
     const msg =
       b.programType === "POINTS"
         ? `+${r.delta.pointsDelta} puntos`
@@ -162,7 +167,9 @@ export async function purchaseAction(cardId: string, purchaseCents: number, loca
           ? `+${formatMoney(r.delta.cashbackDelta, b.currency)} al monedero`
           : r.earnedReward
             ? `¡Tarjeta completa! Ganó: ${b.stampReward}`
-            : r.delta.stampsDelta > 0
+            : r.milestone
+              ? `+1 sello. ${r.milestone.replace("¡Ya puedes", "¡Ya puede").replace("sigue juntando", "puede seguir juntando")}`
+              : r.delta.stampsDelta > 0
               ? "+1 sello"
               : "Visita registrada (no alcanzó la compra mínima para sello)";
     return { ok: true, data: await cardData(cardId), message: msg };
@@ -171,10 +178,20 @@ export async function purchaseAction(cardId: string, purchaseCents: number, loca
   }
 }
 
-export async function redeemRewardAction(cardId: string, rewardId?: string, locationId?: string | null): Promise<ScanResult> {
+export async function redeemRewardAction(
+  cardId: string,
+  rewardId?: string,
+  locationId?: string | null,
+  tierStamps?: number,
+): Promise<ScanResult> {
   try {
     const user = await guard();
-    const t = await redeemReward({ staffId: user.id, businessId: user.business.id, locationId: locationId || null }, cardId, rewardId);
+    const t = await redeemReward(
+      { staffId: user.id, businessId: user.business.id, locationId: locationId || null },
+      cardId,
+      rewardId,
+      tierStamps,
+    );
     after(() => syncCard(cardId, { notifyBalance: true }));
     return { ok: true, data: await cardData(cardId), message: t.description };
   } catch (e) {

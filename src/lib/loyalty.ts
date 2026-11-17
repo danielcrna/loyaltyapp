@@ -129,3 +129,65 @@ export const PROGRAM_LABELS: Record<ProgramType, string> = {
   CASHBACK: "Monedero electrónico (cashback)",
   STAMPS: "Sellos / visitas",
 };
+
+// ─────────────────────────── Niveles del programa de sellos ───────────────────────────
+//
+// Ej. tarjeta de 10 sellos con un nivel intermedio:
+//   5 sellos  → "Americano chico"   (canje opcional: descuenta 5 sellos)
+//   10 sellos → "Bebida de tu elección" (al completar la tarjeta se gana y se reinicia)
+// El cliente decide en caja si canjea el nivel intermedio o sigue acumulando.
+
+export type StampRule = { stamps: number; reward: string; final?: boolean };
+
+/** Lee y limpia los niveles intermedios guardados (JSON): válidos, únicos, ordenados y menores al total. */
+export function parseStampTiers(raw: unknown, stampsRequired: number): StampRule[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<number>();
+  return raw
+    .map((t) => ({
+      stamps: Math.floor(Number((t as StampRule)?.stamps)),
+      reward: String((t as StampRule)?.reward ?? "").trim().slice(0, 60),
+    }))
+    .filter((t) => t.stamps >= 1 && t.stamps < stampsRequired && t.reward && !seen.has(t.stamps) && seen.add(t.stamps))
+    .sort((a, b) => a.stamps - b.stamps);
+}
+
+/** Todas las reglas del programa: niveles intermedios + recompensa final. */
+export function stampRules(b: { stampTiers: unknown; stampsRequired: number; stampReward: string }): StampRule[] {
+  return [...parseStampTiers(b.stampTiers, b.stampsRequired), { stamps: b.stampsRequired, reward: b.stampReward, final: true }];
+}
+
+/** Canje de un nivel intermedio: descuenta sus sellos. */
+export function computeRedeemTier(card: CardBalances, tier: StampRule): Delta {
+  if (tier.final) throw new LoyaltyError("La recompensa final se canjea al completar la tarjeta");
+  if (card.stamps < tier.stamps) throw new LoyaltyError(`Se necesitan ${tier.stamps} sellos para "${tier.reward}"`);
+  return { ...ZERO_DELTA, stampsDelta: -tier.stamps };
+}
+
+/** Niveles intermedios que se alcanzaron al pasar de `before` a `after` sellos (sin completar la tarjeta). */
+export function tiersReached(tiers: StampRule[], before: number, after: number): StampRule[] {
+  return tiers.filter((t) => !t.final && before < t.stamps && t.stamps <= after);
+}
+
+/** Estado del cliente: qué puede canjear ya y cuál es su siguiente meta. */
+export function stampStatus(rules: StampRule[], card: Pick<CardBalances, "stamps" | "rewardsAvailable">) {
+  const available = rules.filter((r) => !r.final && card.stamps >= r.stamps);
+  const next = rules.find((r) => r.stamps > card.stamps) ?? rules[rules.length - 1];
+  return { available, next, remaining: Math.max(0, next.stamps - card.stamps) };
+}
+
+/** Texto corto de las reglas: "5 sellos: Americano chico · 10 sellos: Bebida gratis". */
+export function rulesSummary(rules: StampRule[]) {
+  return rules.map((r) => `${r.stamps} sellos: ${r.reward}`).join(" · ");
+}
+
+/** Línea corta de recompensa para pases y tarjeta web: lo que ya puede canjear o su siguiente meta. */
+export function stampRewardLine(rules: StampRule[], card: Pick<CardBalances, "stamps" | "rewardsAvailable">) {
+  const final = rules[rules.length - 1];
+  if (card.rewardsAvailable > 0) return `${card.rewardsAvailable > 1 ? `${card.rewardsAvailable}× ` : ""}${final.reward} ✓`;
+  const st = stampStatus(rules, card);
+  const ready = st.available[st.available.length - 1];
+  if (ready) return `${ready.reward} ✓`;
+  if (rules.length === 1) return final.reward;
+  return `${st.next.reward} (faltan ${st.remaining})`;
+}

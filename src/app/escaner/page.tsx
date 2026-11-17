@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { hasActiveAccess } from "@/lib/billing";
 import { Scanner } from "@/components/scanner";
+import { stampRules } from "@/lib/loyalty";
 import { SwRegister } from "@/components/sw-register";
 
 export const metadata = { title: "Escáner" };
@@ -42,7 +43,13 @@ export default async function ScannerPage() {
           </p>
         )}
         <Scanner
-          program={{ type: b.programType, stampReward: b.stampReward, stampMinPurchase: b.stampMinPurchase, currency: b.currency }}
+          program={{
+            type: b.programType,
+            stampReward: b.stampReward,
+            stampRules: stampRules(b),
+            stampMinPurchase: b.stampMinPurchase,
+            currency: b.currency,
+          }}
           rewards={rewards.map((r) => ({ id: r.id, name: r.name, pointsCost: r.pointsCost }))}
           locations={locations}
         />

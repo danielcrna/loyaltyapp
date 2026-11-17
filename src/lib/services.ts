@@ -8,6 +8,10 @@ import {
   computeRedeemCashback,
   computeRedeemReward,
   computeWelcome,
+  computeRedeemTier,
+  stampRules,
+  stampStatus,
+  tiersReached,
   type Delta,
 } from "./loyalty";
 import { getPlan } from "./plans";
@@ -262,7 +266,11 @@ async function cardForBusiness(cardId: string, businessId: string) {
   return card;
 }
 
-/** Registra una compra o visita y otorga puntos / cashback / sellos según el programa. */
+/**
+ * Registra una compra o visita y otorga puntos / cashback / sellos según el programa.
+ * En sellos, si el cliente alcanza un nivel o completa la tarjeta, se escribe un aviso en su pase
+ * (campo "Novedades"), que el iPhone muestra como notificación; se devuelve en `milestone`.
+ */
 export async function recordPurchase(ctx: StaffCtx, cardId: string, purchaseCents: number) {
   await cardForBusiness(cardId, ctx.businessId);
   const business = await db.business.findUniqueOrThrow({ where: { id: ctx.businessId } });
@@ -286,27 +294,52 @@ export async function recordPurchase(ctx: StaffCtx, cardId: string, purchaseCent
       description: desc,
       countsAsVisit: true,
     });
-    return { tx: t, delta, earnedReward: delta.rewardsDelta > 0 };
+
+    let milestone: string | null = null;
+    if (business.programType === "STAMPS") {
+      const rules = stampRules(business);
+      if (delta.rewardsDelta > 0) {
+        milestone = `¡Completaste tu tarjeta! Ganaste: ${business.stampReward}. Canjéala en tu próxima visita.`;
+      } else {
+        const reached = tiersReached(rules, card.stamps, card.stamps + delta.stampsDelta).pop();
+        if (reached) {
+          const next = stampStatus(rules, { stamps: card.stamps + delta.stampsDelta, rewardsAvailable: 0 }).next;
+          milestone = `¡Ya puedes canjear: ${reached.reward}! O sigue juntando sellos para: ${next.reward}.`;
+        }
+      }
+      if (milestone) await tx.loyaltyCard.update({ where: { id: cardId }, data: { lastMessage: milestone } });
+    }
+    return { tx: t, delta, earnedReward: delta.rewardsDelta > 0, milestone };
   });
 }
 
-export async function redeemReward(ctx: StaffCtx, cardId: string, rewardId?: string) {
+/**
+ * Canje de recompensa:
+ * - Puntos: `rewardId` del catálogo.
+ * - Sellos: `tierStamps` = nivel intermedio a canjear (descuenta sus sellos); sin él, la recompensa final ya ganada.
+ */
+export async function redeemReward(ctx: StaffCtx, cardId: string, rewardId?: string, tierStamps?: number) {
   await cardForBusiness(cardId, ctx.businessId);
   const business = await db.business.findUniqueOrThrow({ where: { id: ctx.businessId } });
   const reward = rewardId
     ? await db.reward.findFirst({ where: { id: rewardId, businessId: ctx.businessId, active: true } })
     : null;
   if (business.programType === "POINTS" && !reward) throw new LoyaltyError("Selecciona una recompensa");
+  const tier =
+    business.programType === "STAMPS" && tierStamps
+      ? stampRules(business).find((r) => !r.final && r.stamps === tierStamps)
+      : undefined;
+  if (tierStamps && !tier) throw new LoyaltyError("Ese nivel ya no existe en el programa");
 
   return db.$transaction(async (tx) => {
     const card = await lockCard(tx, cardId);
-    const delta = computeRedeemReward(business, card, reward?.pointsCost);
+    const delta = tier ? computeRedeemTier(card, tier) : computeRedeemReward(business, card, reward?.pointsCost);
     return applyTx(tx, {
       ...ctx,
       cardId,
       type: "REDEEM_REWARD",
       delta,
-      description: reward ? `Canje: ${reward.name}` : `Canje: ${business.stampReward}`,
+      description: reward ? `Canje: ${reward.name}` : `Canje: ${tier ? tier.reward : business.stampReward}`,
       rewardId: reward?.id,
     });
   });

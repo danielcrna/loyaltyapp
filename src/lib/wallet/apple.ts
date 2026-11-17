@@ -3,7 +3,7 @@ import { PKPass } from "passkit-generator";
 import type { Business, CustomerCoupon, Customer, Location, LoyaltyCard, Media, Promotion } from "@prisma/client";
 import { config, publicUrl } from "../config";
 import { renderIcon, renderPassLogo, renderStampStrip, renderStrip } from "../images";
-import { balanceSummary } from "../loyalty";
+import { balanceSummary, stampRewardLine, stampRules } from "../loyalty";
 import { formatDate, formatMoney } from "../format";
 
 /**
@@ -125,6 +125,7 @@ export async function buildLoyaltyPass(
             accent: business.labelColor,
             background: stripBg,
             ...stampImages(business),
+            tierMarks: stampRules(business).filter((r) => !r.final).map((r) => r.stamps),
           })
         : await renderStrip(w, h, { background: stripBg, bg: business.bgColor });
   }
@@ -159,11 +160,13 @@ export async function buildLoyaltyPass(
 
   pass.secondaryFields.push({ key: "member", label: "Cliente", value: card.customer.name });
   if (business.programType === "STAMPS") {
+    // Sin changeMessage: los avisos de nivel alcanzado / tarjeta completa van en "Novedades",
+    // así canjear una recompensa no genera una notificación confusa.
     pass.secondaryFields.push({
       key: "rewards",
-      label: "Recompensas",
-      value: card.rewardsAvailable > 0 ? `${card.rewardsAvailable} lista(s)` : business.stampReward,
-      changeMessage: "¡Ganaste una recompensa! %@",
+      label: "Recompensa",
+      value: stampRewardLine(stampRules(business), card),
+      textAlignment: "PKTextAlignmentRight",
     });
   } else {
     pass.secondaryFields.push({ key: "visits", label: "Visitas", value: String(card.visits) });
@@ -195,6 +198,15 @@ export async function buildLoyaltyPass(
     { key: "card", label: "Ver mi tarjeta", value: publicUrl(`/tarjeta/${card.serial}`) },
     { key: "member_since", label: "Miembro desde", value: formatDate(card.createdAt) },
   );
+  if (business.programType === "STAMPS") {
+    pass.backFields.push({
+      key: "rules",
+      label: "Recompensas",
+      value: stampRules(business)
+        .map((r) => `${r.stamps} sellos: ${r.reward}${r.final ? "" : " (canjeable, descuenta los sellos)"}`)
+        .join("\n"),
+    });
+  }
   if (business.programTerms) pass.backFields.push({ key: "terms", label: "Términos", value: business.programTerms });
   if (business.phone) pass.backFields.push({ key: "phone", label: "Teléfono", value: business.phone });
   if (business.website) pass.backFields.push({ key: "web", label: "Sitio web", value: business.website });

@@ -1,4 +1,6 @@
 import { requireBusinessUser } from "@/lib/auth";
+import { parseStampTiers } from "@/lib/loyalty";
+import { StampRulesFields } from "./stamp-rules-fields";
 import { db } from "@/lib/db";
 import { ActionForm, SubmitButton } from "@/components/action-form";
 import { Badge, Card, Checkbox, Field, Input, Notice, PageHeader, Select, Textarea } from "@/components/ui";
@@ -11,6 +13,7 @@ export default async function ProgramPage() {
   const rewards = await db.reward.findMany({ where: { businessId: b.id }, orderBy: { pointsCost: "asc" } });
   const customers = await db.customer.count({ where: { businessId: b.id } });
   const money = (c: number) => (c / 100).toFixed(2);
+  const tier = parseStampTiers(b.stampTiers, b.stampsRequired)[0];
 
   return (
     <>
@@ -52,12 +55,12 @@ export default async function ProgramPage() {
           <div className="grid gap-6 md:grid-cols-3">
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-stone-500">Sellos</h3>
-              <Field label="Sellos para completar la tarjeta">
-                <Input name="stampsRequired" type="number" min={1} max={20} defaultValue={b.stampsRequired} />
-              </Field>
-              <Field label="Recompensa al completar">
-                <Input name="stampReward" defaultValue={b.stampReward} maxLength={60} />
-              </Field>
+              <StampRulesFields
+                stampsRequired={b.stampsRequired}
+                stampReward={b.stampReward}
+                tierStamps={tier?.stamps}
+                tierReward={tier?.reward}
+              />
               <Field label="Compra mínima para sello ($)" hint="0 = un sello por visita">
                 <Input name="stampMinPurchase" defaultValue={money(b.stampMinPurchase)} inputMode="decimal" />
               </Field>
