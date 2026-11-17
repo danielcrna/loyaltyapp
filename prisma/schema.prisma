@@ -1,0 +1,347 @@
+// Esquema de datos de la plataforma de lealtad (multi-negocio / multi-tenant).
+// Todas las cantidades de dinero se guardan en centavos (Int) para evitar errores de redondeo.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────── Plataforma / negocios ───────────────────────────
+
+enum ProgramType {
+  POINTS // Puntos por consumo, canjeables por recompensas del catálogo
+  CASHBACK // Monedero electrónico: % del consumo regresa como saldo
+  STAMPS // Sellos por visita/compra: al completar N se gana una recompensa
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+}
+
+enum Role {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+model Business {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  category  String   @default("cafeteria")
+  email     String?
+  phone     String?
+  website   String?
+  currency  String   @default("MXN")
+  timezone  String   @default("America/Mexico_City")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Programa de lealtad
+  programType        ProgramType @default(STAMPS)
+  programName        String      @default("Tarjeta de lealtad")
+  pointsPerCurrency  Float       @default(1) // puntos por cada 1 unidad de moneda gastada
+  cashbackPercent    Float       @default(5) // % que regresa al monedero
+  stampsRequired     Int         @default(10) // sellos para ganar la recompensa
+  stampReward        String      @default("Una bebida gratis")
+  stampMinPurchase   Int         @default(0) // compra mínima (centavos) para otorgar sello; 0 = por visita
+  welcomeBonus       Int         @default(0) // puntos / sellos / centavos al inscribirse
+  minRedeemCashback  Int         @default(0) // saldo mínimo (centavos) para usar monedero
+  programTerms       String      @default("")
+
+  // Diseño de la tarjeta
+  bgColor     String  @default("#1f2937")
+  fgColor     String  @default("#ffffff")
+  labelColor  String  @default("#fbbf24")
+  logoId      String?
+  logo        Media?  @relation("BusinessLogo", fields: [logoId], references: [id])
+  stripId     String?
+  strip       Media?  @relation("BusinessStrip", fields: [stripId], references: [id])
+
+  // Recordatorios automáticos
+  winbackDays     Int     @default(30) // días sin visita para enviar recordatorio (0 = desactivado)
+  winbackMessage  String  @default("¡Te extrañamos! Ven a visitarnos y sigue sumando en tu tarjeta.")
+  birthdayMessage String  @default("¡Feliz cumpleaños! Tenemos un regalo para ti en tu próxima visita.")
+
+  // Formulario de inscripción
+  askEmail    Boolean @default(true)
+  askPhone    Boolean @default(true)
+  askBirthday Boolean @default(true)
+
+  // Google Wallet
+  googleClassVersion Int @default(0)
+
+  // Facturación (Stripe)
+  plan                 String             @default("starter")
+  subscriptionStatus   SubscriptionStatus @default(TRIALING)
+  trialEndsAt          DateTime?
+  currentPeriodEnd     DateTime?
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+
+  users       User[]
+  locations   Location[]
+  customers   Customer[]
+  cards       LoyaltyCard[]
+  rewards     Reward[]
+  promotions  Promotion[]
+  campaigns   Campaign[]
+  transactions Transaction[]
+  media       Media[]       @relation("BusinessMedia")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  role         Role      @default(OWNER)
+  isSuperAdmin Boolean   @default(false)
+  businessId   String?
+  business     Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  lastLoginAt  DateTime?
+
+  transactions     Transaction[]
+  redeemedCoupons  CustomerCoupon[]
+}
+
+// Sucursales: también se usan como ubicaciones relevantes para los pases (geonotificaciones)
+model Location {
+  id           String   @id @default(cuid())
+  businessId   String
+  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name         String
+  address      String   @default("")
+  latitude     Float
+  longitude    Float
+  relevantText String   @default("") // Mensaje en pantalla de bloqueo (Apple Wallet) al estar cerca
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  transactions Transaction[]
+}
+
+model Media {
+  id         String    @id @default(cuid())
+  businessId String?
+  business   Business? @relation("BusinessMedia", fields: [businessId], references: [id], onDelete: Cascade)
+  mime       String
+  data       Bytes
+  width      Int?
+  height     Int?
+  createdAt  DateTime  @default(now())
+
+  logoFor  Business[]  @relation("BusinessLogo")
+  stripFor Business[]  @relation("BusinessStrip")
+  promos   Promotion[]
+}
+
+// ─────────────────────────── Clientes y tarjetas ───────────────────────────
+
+model Customer {
+  id               String    @id @default(cuid())
+  businessId       String
+  business         Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name             String
+  email            String?
+  phone            String?
+  birthday         DateTime? @db.Date
+  marketingConsent Boolean   @default(false)
+  notes            String    @default("")
+  source           String    @default("qr") // qr, staff, import
+  createdAt        DateTime  @default(now())
+
+  card    LoyaltyCard?
+  coupons CustomerCoupon[]
+
+  @@unique([businessId, email])
+  @@unique([businessId, phone])
+  @@index([businessId, createdAt])
+}
+
+model LoyaltyCard {
+  id                  String    @id @default(cuid())
+  serial              String    @unique // va en el QR y en los pases
+  authToken           String // token de autenticación del web service de Apple Wallet
+  businessId          String
+  business            Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customerId          String    @unique
+  customer            Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  points              Int       @default(0)
+  cashbackCents       Int       @default(0)
+  stamps              Int       @default(0)
+  rewardsAvailable    Int       @default(0) // recompensas ganadas por sellos aún sin canjear
+  visits              Int       @default(0)
+  totalSpentCents     Int       @default(0)
+  lifetimePoints      Int       @default(0)
+  lastVisitAt         DateTime?
+  lastMessage         String? // último mensaje enviado al pase (aparece como notificación)
+  lastReminderAt      DateTime?
+  lastBirthdayYear    Int?
+  appleInstalled      Boolean   @default(false)
+  googleSaved         Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt // se usa como "lastUpdated" del pase
+
+  transactions Transaction[]
+
+  @@index([businessId, lastVisitAt])
+}
+
+enum TxType {
+  WELCOME
+  EARN // compra que suma puntos / cashback / sellos
+  VISIT // visita (sello por visita)
+  REDEEM_REWARD // canje de recompensa (puntos o sellos)
+  REDEEM_CASHBACK // uso de saldo del monedero
+  COUPON // canje de cupón
+  ADJUST // ajuste manual
+}
+
+model Transaction {
+  id            String       @id @default(cuid())
+  businessId    String
+  business      Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  cardId        String
+  card          LoyaltyCard  @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  type          TxType
+  purchaseCents Int          @default(0)
+  pointsDelta   Int          @default(0)
+  cashbackDelta Int          @default(0)
+  stampsDelta   Int          @default(0)
+  rewardsDelta  Int          @default(0)
+  description   String       @default("")
+  staffId       String?
+  staff         User?        @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  locationId    String?
+  location      Location?    @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  rewardId      String?
+  couponId      String?
+  createdAt     DateTime     @default(now())
+
+  @@index([businessId, createdAt])
+  @@index([cardId, createdAt])
+}
+
+// Catálogo de recompensas (programa de puntos)
+model Reward {
+  id          String   @id @default(cuid())
+  businessId  String
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name        String
+  description String   @default("")
+  pointsCost  Int
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+// ─────────────────────────── Cupones y promociones ───────────────────────────
+
+enum AutoAssign {
+  NONE // se asigna manualmente / envío masivo
+  NEW_MEMBERS // se entrega al inscribirse
+  BIRTHDAY // se entrega en el cumpleaños
+  WINBACK // se entrega con el recordatorio de inactividad
+}
+
+model Promotion {
+  id             String     @id @default(cuid())
+  businessId     String
+  business       Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  title          String // "2x1 en capuccinos"
+  description    String     @default("")
+  terms          String     @default("")
+  discountLabel  String     @default("") // texto corto destacado: "-20%", "2x1", "GRATIS"
+  imageId        String?
+  image          Media?     @relation(fields: [imageId], references: [id])
+  startsAt       DateTime?
+  endsAt         DateTime?
+  validDays      Int?       // vigencia en días desde que se entrega el cupón
+  autoAssign     AutoAssign @default(NONE)
+  active         Boolean    @default(true)
+  googleVersion  Int        @default(0)
+  createdAt      DateTime   @default(now())
+
+  coupons CustomerCoupon[]
+}
+
+enum CouponStatus {
+  ACTIVE
+  REDEEMED
+  EXPIRED
+  VOID
+}
+
+model CustomerCoupon {
+  id           String       @id @default(cuid())
+  code         String       @unique // va en el QR del cupón
+  authToken    String
+  promotionId  String
+  promotion    Promotion    @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  customerId   String
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  status       CouponStatus @default(ACTIVE)
+  expiresAt    DateTime?
+  redeemedAt   DateTime?
+  redeemedById String?
+  redeemedBy   User?        @relation(fields: [redeemedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([customerId, status])
+}
+
+// ─────────────────────────── Notificaciones ───────────────────────────
+
+model Campaign {
+  id          String   @id @default(cuid())
+  businessId  String
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  title       String
+  message     String
+  kind        String   @default("broadcast") // broadcast | promotion
+  promotionId String?
+  recipients  Int      @default(0)
+  appleSent   Int      @default(0)
+  googleSent  Int      @default(0)
+  createdById String?
+  createdAt   DateTime @default(now())
+}
+
+// ─────────────────────────── Apple Wallet web service ───────────────────────────
+
+model AppleDevice {
+  id                      String              @id @default(cuid())
+  deviceLibraryIdentifier String              @unique
+  pushToken               String
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  registrations           AppleRegistration[]
+}
+
+model AppleRegistration {
+  id                 String      @id @default(cuid())
+  deviceId           String
+  device             AppleDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  passTypeIdentifier String
+  serialNumber       String // serial de LoyaltyCard o code de CustomerCoupon
+  createdAt          DateTime    @default(now())
+
+  @@unique([deviceId, passTypeIdentifier, serialNumber])
+  @@index([serialNumber])
+}
+
+model AppleLog {
+  id        String   @id @default(cuid())
+  message   String
+  createdAt DateTime @default(now())
+}

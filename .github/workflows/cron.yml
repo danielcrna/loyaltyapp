@@ -1,0 +1,13 @@
+# Alternativa gratuita a Vercel Cron: ejecuta las automatizaciones diarias (cumpleaños, recordatorios, cupones vencidos).
+# Configura los secretos APP_URL y CRON_SECRET en el repositorio (Settings → Secrets and variables → Actions).
+name: Automatizaciones diarias
+on:
+  schedule:
+    - cron: "0 15 * * *" # 9:00 am hora del centro de México
+  workflow_dispatch:
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    if: ${{ vars.ENABLE_CRON == 'true' }}
+    steps:
+      - run: curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.APP_URL }}/api/cron"

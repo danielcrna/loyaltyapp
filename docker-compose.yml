@@ -1,0 +1,27 @@
+# Desarrollo local / VPS sencillo: docker compose up -d
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: loyalty
+      POSTGRES_PASSWORD: loyalty
+      POSTGRES_DB: loyalty
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loyalty"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    profiles: ["app"] # inicia con: docker compose --profile app up -d
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://loyalty:loyalty@db:5432/loyalty
+    ports: ["3000:3000"]
+    depends_on:
+      db: { condition: service_healthy }
+
+volumes:
+  pgdata:
