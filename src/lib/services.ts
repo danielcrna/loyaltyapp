@@ -11,6 +11,7 @@ import {
   type Delta,
 } from "./loyalty";
 import { getPlan } from "./plans";
+import { formatMoney } from "./format";
 
 export { LoyaltyError };
 
@@ -36,6 +37,7 @@ async function applyTx(
     rewardId?: string;
     couponId?: string;
     countsAsVisit?: boolean;
+    requestId?: string | null;
   },
 ) {
   const { delta } = args;
@@ -67,6 +69,7 @@ async function applyTx(
       locationId: args.locationId ?? null,
       rewardId: args.rewardId,
       couponId: args.couponId,
+      requestId: args.requestId ?? null,
     },
   });
 }
@@ -254,7 +257,7 @@ export async function revokeCoupons(businessId: string, where: { couponId?: stri
 
 // ─────────────────────────── Operaciones del escáner ───────────────────────────
 
-type StaffCtx = { staffId: string; businessId: string; locationId?: string | null };
+type StaffCtx = { staffId: string; businessId: string; locationId?: string | null; requestId?: string | null };
 
 async function cardForBusiness(cardId: string, businessId: string) {
   const card = await db.loyaltyCard.findUnique({ where: { id: cardId } });
@@ -287,6 +290,77 @@ export async function recordPurchase(ctx: StaffCtx, cardId: string, purchaseCent
       countsAsVisit: true,
     });
     return { tx: t, delta, earnedReward: delta.rewardsDelta > 0 };
+  });
+}
+
+/** Tiempo máximo para deshacer desde el escáner (el escáner ofrece el botón menos tiempo). */
+export const UNDO_WINDOW_MS = 2 * 60 * 1000;
+
+/** Clave con la que queda constancia de que un registro se deshizo. */
+export const undoKey = (requestId: string) => `${requestId}:undo`;
+
+/**
+ * Deshace una compra o visita registrada desde el escáner con `requestId`.
+ * Solo procede si la registró el mismo usuario, sigue dentro de la ventana y es el último movimiento
+ * de la tarjeta (así los saldos revierten exactos). Borra el registro original para que no cuente
+ * en las métricas y deja un ajuste sin saldo como constancia.
+ */
+export async function undoPurchase(ctx: { staffId: string; businessId: string }, requestId: string) {
+  return db.$transaction(async (tx) => {
+    const orig = await tx.transaction.findUnique({ where: { requestId } });
+    if (!orig || orig.businessId !== ctx.businessId) {
+      const undone = await tx.transaction.findUnique({ where: { requestId: undoKey(requestId) } });
+      throw new LoyaltyError(undone ? "Este registro ya se había deshecho" : "No se encontró el registro para deshacer");
+    }
+    if (orig.type !== "EARN" && orig.type !== "VISIT") throw new LoyaltyError("Solo se pueden deshacer compras y visitas");
+    if (orig.staffId !== ctx.staffId) throw new LoyaltyError("Solo quien hizo el registro puede deshacerlo");
+    if (Date.now() - orig.createdAt.getTime() > UNDO_WINDOW_MS)
+      throw new LoyaltyError("Ya pasó el tiempo para deshacer. Pide al encargado un ajuste en el panel.");
+
+    const card = await lockCard(tx, orig.cardId);
+    const latest = await tx.transaction.findFirst({ where: { cardId: orig.cardId }, orderBy: { createdAt: "desc" } });
+    if (latest?.id !== orig.id)
+      throw new LoyaltyError("La tarjeta ya tuvo otro movimiento. Pide al encargado un ajuste en el panel.");
+    if (
+      card.points < orig.pointsDelta ||
+      card.cashbackCents < orig.cashbackDelta ||
+      card.stamps < orig.stampsDelta ||
+      card.rewardsAvailable < orig.rewardsDelta
+    )
+      throw new LoyaltyError("No se puede deshacer: el saldo quedaría en negativo");
+
+    const prevVisit = await tx.transaction.findFirst({
+      where: { cardId: orig.cardId, type: { in: ["EARN", "VISIT"] }, id: { not: orig.id } },
+      orderBy: { createdAt: "desc" },
+    });
+    await tx.loyaltyCard.update({
+      where: { id: orig.cardId },
+      data: {
+        points: { decrement: orig.pointsDelta },
+        lifetimePoints: { decrement: Math.max(0, orig.pointsDelta) },
+        cashbackCents: { decrement: orig.cashbackDelta },
+        stamps: { decrement: orig.stampsDelta },
+        rewardsAvailable: { decrement: orig.rewardsDelta },
+        totalSpentCents: { decrement: orig.purchaseCents },
+        visits: { decrement: 1 },
+        lastVisitAt: prevVisit?.createdAt ?? null,
+      },
+    });
+    await tx.transaction.delete({ where: { id: orig.id } });
+    const { currency } = await tx.business.findUniqueOrThrow({ where: { id: orig.businessId }, select: { currency: true } });
+    const amount = orig.purchaseCents > 0 ? ` de ${formatMoney(orig.purchaseCents, currency)}` : "";
+    await tx.transaction.create({
+      data: {
+        businessId: orig.businessId,
+        cardId: orig.cardId,
+        type: "ADJUST",
+        description: `Se deshizo: ${orig.description}${amount}`,
+        staffId: ctx.staffId,
+        locationId: orig.locationId,
+        requestId: undoKey(requestId),
+      },
+    });
+    return { cardId: orig.cardId, description: orig.description };
   });
 }
 
