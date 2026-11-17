@@ -31,6 +31,7 @@ export type ScanCard = {
   points: number;
   cashbackCents: number;
   stamps: number;
+  stampsRequired: number;
   rewardsAvailable: number;
   visits: number;
   lastVisit: string;
@@ -48,7 +49,9 @@ export type ScanCoupon = {
   valid: boolean;
   reason?: string;
 };
-export type ScanResult = { ok: true; data: ScanCard | ScanCoupon; message?: string } | { ok: false; error: string };
+export type ScanResult =
+  | { ok: true; data: ScanCard | ScanCoupon; message?: string; earnedReward?: boolean }
+  | { ok: false; error: string };
 
 async function staff() {
   const user = await getCurrentUser();
@@ -73,6 +76,7 @@ async function cardData(cardId: string): Promise<ScanCard> {
     points: card.points,
     cashbackCents: card.cashbackCents,
     stamps: card.stamps,
+    stampsRequired: b.stampsRequired,
     rewardsAvailable: card.rewardsAvailable,
     visits: card.visits,
     lastVisit: formatDate(card.lastVisitAt),
@@ -227,7 +231,7 @@ export async function purchaseAction(
               : r.delta.stampsDelta > 0
                 ? "+1 sello"
                 : `Visita registrada sin sello: la compra fue menor a ${formatMoney(b.stampMinPurchase, b.currency)}`;
-      return { ok: true, data: await cardData(cardId), message: msg };
+      return { ok: true, data: await cardData(cardId), message: msg, earnedReward: r.earnedReward };
     });
   } catch (e) {
     return fail(e);

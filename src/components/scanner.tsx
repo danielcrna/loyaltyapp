@@ -26,8 +26,8 @@ type Reward = { id: string; name: string; pointsCost: number };
 type Loc = { id: string; name: string };
 type Kind = "lookup" | "earn" | "redeem" | "undo";
 type Message = { tone: "ok" | "error"; text: string; retry?: () => void };
-type EarnMeta = { requestId: string; purchaseCents: number };
-type LastEarn = EarnMeta & { headline: string; undoUntil: number };
+type EarnMeta = { requestId: string; purchaseCents: number; before: { stamps: number; points: number } };
+type LastEarn = EarnMeta & { headline: string; undoUntil: number; earnedReward: boolean };
 
 /** Segundos que el escáner ofrece "Deshacer" (el servidor acepta hasta 2 minutos). */
 const UNDO_SECONDS = 15;
@@ -105,15 +105,18 @@ export function Scanner({
     if (r.ok) {
       setResult(r.data);
       setMessage(r.message ? { tone: "ok", text: r.message } : null);
+      const earnedReward = kind === "earn" && r.earnedReward === true;
       if (kind === "earn" && earn) {
-        setLastEarn({ ...earn, headline: r.message ?? "Registrado", undoUntil: Date.now() + UNDO_SECONDS * 1000 });
+        setLastEarn({ ...earn, headline: r.message ?? "Registrado", undoUntil: Date.now() + UNDO_SECONDS * 1000, earnedReward });
         setShowSuccess(true);
       }
       if (kind === "lookup" || kind === "undo") {
         setLastEarn(null);
         setShowSuccess(false);
       }
-      buzz(r.message ? 80 : 30);
+      if (kind === "redeem") setShowSuccess(false);
+      // El premio se siente distinto en la mano: un patrón más largo que el de un sello normal.
+      buzz(earnedReward ? [80, 60, 80, 60, 200] : r.message ? 80 : 30);
     } else {
       setMessage({ tone: "error", text: r.error });
       buzz([60, 60, 60]);
@@ -250,8 +253,15 @@ export function Scanner({
         <SuccessPanel
           card={success.card}
           earn={success.earn}
-          currency={program.currency}
+          program={program}
+          rewards={rewards}
           busy={pending}
+          canRedeem={blockedReason === null}
+          onRedeemNow={() => {
+            const id = newRequestId();
+            const cardId = success.card.cardId;
+            run(() => redeemRewardAction(cardId, undefined, loc, id), "redeem");
+          }}
           onUndo={() => {
             const id = success.earn.requestId;
             run(() => undoPurchaseAction(id), "undo");
@@ -276,7 +286,11 @@ export function Scanner({
             setMessage(null);
           }}
           onEarn={(cents) => {
-            const earn = { requestId: newRequestId(), purchaseCents: cents };
+            const earn = {
+              requestId: newRequestId(),
+              purchaseCents: cents,
+              before: { stamps: result.stamps, points: result.points },
+            };
             run(() => purchaseAction(result.cardId, cents, loc, earn.requestId), "earn", earn);
           }}
           onRedeemReward={(rewardId) => {
@@ -721,19 +735,54 @@ function useSecondsLeft(until: number) {
 }
 
 /** Lo que ve el cajero justo después de registrar: el resultado, el saldo nuevo y el siguiente paso. */
+/**
+ * Tira de sellos de la tarjeta. El sello recién ganado cae con la animación de sello de goma;
+ * cuando la tarjeta se completa, todos los sellos toman el color de la marca.
+ */
+function StampStrip({ required, filled, fresh, complete }: { required: number; filled: number; fresh: number; complete: boolean }) {
+  const total = Math.max(1, required);
+  return (
+    <div role="img" aria-label={`${Math.min(filled, total)} de ${total} sellos`} className="flex flex-wrap justify-center gap-2">
+      {Array.from({ length: total }, (_, i) => {
+        const on = i < filled;
+        return (
+          <span
+            key={i}
+            className={`grid size-8 place-items-center rounded-full ${
+              on ? (complete ? "bg-brand-600 text-white" : "bg-emerald-700 text-white") : "border-2 border-dashed border-stone-300"
+            } ${i === fresh ? "motion-safe:animate-stamp-press" : ""}`}
+          >
+            {on && (
+              <svg viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                <path d="M3.5 8.5l3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function SuccessPanel({
   card,
   earn,
-  currency,
+  program,
+  rewards,
   busy,
+  canRedeem,
+  onRedeemNow,
   onUndo,
   onNext,
   onShowCard,
 }: {
   card: ScanCard;
   earn: LastEarn;
-  currency: string;
+  program: Program;
+  rewards: Reward[];
   busy: boolean;
+  canRedeem: boolean;
+  onRedeemNow: () => void;
   onUndo: () => void;
   onNext: () => void;
   onShowCard: () => void;
@@ -743,21 +792,63 @@ function SuccessPanel({
   useEffect(() => {
     nextRef.current?.focus({ preventScroll: true });
   }, []);
+
+  const isStamps = program.type === "STAMPS";
+  const stampAdded = card.stamps > earn.before.stamps;
+  const strip = earn.earnedReward
+    ? { filled: card.stampsRequired, fresh: card.stampsRequired - 1 }
+    : { filled: card.stamps, fresh: stampAdded ? card.stamps - 1 : -1 };
+  // En puntos, avisa qué recompensas acaba de alcanzar el cliente con esta compra.
+  const newlyAffordable =
+    program.type === "POINTS" ? rewards.filter((r) => r.pointsCost > earn.before.points && r.pointsCost <= card.points) : [];
+  const firstName = card.customerName.split(" ")[0] || card.customerName;
+
   return (
-    <section aria-labelledby="scan-success" className="space-y-5 rounded-2xl border border-emerald-200 bg-white p-5 text-center shadow-sm">
+    <section
+      aria-labelledby="scan-success"
+      className={`space-y-5 rounded-2xl border bg-white p-5 text-center shadow-sm ${
+        earn.earnedReward ? "border-brand-200" : "border-emerald-200"
+      }`}
+    >
       <div className="space-y-1">
-        <p id="scan-success" className="text-3xl font-black text-balance text-emerald-800">
-          {earn.headline}
+        <p id="scan-success" className={`text-3xl font-black text-balance ${earn.earnedReward ? "text-brand-700" : "text-emerald-800"}`}>
+          {earn.earnedReward ? "¡Tarjeta completa!" : earn.headline}
         </p>
         <p className="text-base font-semibold text-stone-900">{card.customerName}</p>
-        {earn.purchaseCents > 0 && <p className="text-sm text-stone-600">Compra de {money(earn.purchaseCents, currency)}</p>}
+        {earn.purchaseCents > 0 && <p className="text-sm text-stone-600">Compra de {money(earn.purchaseCents, program.currency)}</p>}
       </div>
 
-      <div className="rounded-xl bg-stone-50 py-3">
-        <div className="text-xs font-semibold text-stone-500 uppercase">{card.balanceLabel}</div>
-        <div className="text-2xl font-bold tabular-nums">{card.balanceValue}</div>
-        {card.secondary && <div className="text-sm font-semibold text-emerald-800">{card.secondary}</div>}
-      </div>
+      {isStamps ? (
+        <StampStrip required={card.stampsRequired} filled={strip.filled} fresh={strip.fresh} complete={earn.earnedReward} />
+      ) : (
+        <div className="rounded-xl bg-stone-50 py-3">
+          <div className="text-xs font-semibold text-stone-500 uppercase">{card.balanceLabel}</div>
+          <div className="text-2xl font-bold tabular-nums">{card.balanceValue}</div>
+        </div>
+      )}
+
+      {earn.earnedReward ? (
+        <div className="space-y-3 rounded-2xl bg-brand-50 p-4 motion-safe:animate-reward-in">
+          <p className="text-xl font-bold text-balance text-stone-900">Ganó: {program.stampReward}</p>
+          <p className="text-sm text-stone-700">Avísale a {firstName}. Puede canjearlo ahora o en su próxima visita.</p>
+          <ConfirmButton
+            disabled={busy || !canRedeem}
+            onConfirm={onRedeemNow}
+            confirmLabel={`Confirmar canje: ${program.stampReward}`}
+            className="w-full rounded-xl bg-brand-700 py-3 font-bold text-white"
+          >
+            Canjear ahora
+          </ConfirmButton>
+        </div>
+      ) : (
+        isStamps && card.secondary && <p className="text-sm font-semibold text-emerald-800">{card.secondary}</p>
+      )}
+
+      {newlyAffordable.length > 0 && (
+        <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900">
+          Ya le alcanza para: {newlyAffordable.map((r) => r.name).join(", ")}
+        </p>
+      )}
 
       <button
         ref={nextRef}
