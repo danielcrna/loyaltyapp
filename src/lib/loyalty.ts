@@ -191,3 +191,13 @@ export function stampRewardLine(rules: StampRule[], card: Pick<CardBalances, "st
   if (rules.length === 1) return final.reward;
   return `${st.next.reward} (faltan ${st.remaining})`;
 }
+
+/**
+ * Distribución de los sellos en filas, compartida por la tarjeta web y la imagen de los pases
+ * (Apple Wallet / Google Wallet) para que se vean igual: hasta 5 en una fila; de 6 en adelante, dos filas.
+ */
+export function stampGrid(total: number) {
+  const n = Math.max(1, Math.min(total, 20));
+  const rows = n <= 5 ? 1 : 2;
+  return { n, rows, perRow: Math.ceil(n / rows) };
+}

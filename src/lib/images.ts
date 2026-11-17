@@ -1,5 +1,6 @@
 import "server-only";
 import sharp from "sharp";
+import { stampGrid } from "./loyalty";
 
 function esc(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -70,13 +71,14 @@ export async function renderStampStrip(opts: {
   tierMarks?: number[]; // posiciones (1-based) de los niveles intermedios: se marcan con un anillo
 }) {
   const { width, height, stamps, required, bg, fg, accent } = opts;
-  const n = Math.max(1, Math.min(required, 20));
-  const rows = n > 10 ? 2 : 1;
-  const perRow = Math.ceil(n / rows);
+  const { n, rows, perRow } = stampGrid(required);
+  // Celdas cuadradas, centradas en la franja (mismo acomodo que la tarjeta web)
   const padX = width * 0.06;
-  const cellW = (width - padX * 2) / perRow;
-  const cellH = height / rows;
-  const r = Math.min(cellW, cellH) * 0.36;
+  const padY = height * 0.06;
+  const cell = Math.min((width - padX * 2) / perRow, (height - padY * 2) / rows);
+  const x0 = (width - cell * perRow) / 2;
+  const y0 = (height - cell * rows) / 2;
+  const r = cell * 0.36;
   const custom = Boolean(opts.stampImage);
 
   let circles = "";
@@ -94,8 +96,8 @@ export async function renderStampStrip(opts: {
   for (let i = 0; i < n; i++) {
     const row = Math.floor(i / perRow);
     const col = i % perRow;
-    const cx = padX + cellW * col + cellW / 2;
-    const cy = cellH * row + cellH / 2;
+    const cx = x0 + cell * col + cell / 2;
+    const cy = y0 + cell * row + cell / 2;
     const filled = i < stamps;
     if (opts.tierMarks?.includes(i + 1)) {
       // Anillo punteado que señala un nivel de recompensa intermedio
