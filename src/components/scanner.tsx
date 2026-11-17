@@ -34,6 +34,23 @@ const UNDO_SECONDS = 15;
 
 const money = (cents: number, currency: string) => new Intl.NumberFormat("es-MX", { style: "currency", currency }).format(cents / 100);
 
+/** Campos del escáner: texto de 16 px (iOS no hace zoom al enfocar) y 48 px de alto para tocar con el pulgar. */
+const FIELD =
+  "block min-h-12 w-full rounded-lg border border-stone-400 bg-white px-3 text-base text-stone-900 placeholder:text-stone-500 focus:border-stone-900 focus:ring-2 focus:ring-stone-900/15 focus:outline-none disabled:bg-stone-100";
+const LABEL = "text-sm font-semibold text-stone-800";
+
+function QrIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 48 48" className={className} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+      <path d="M6 16V9a3 3 0 0 1 3-3h7M32 6h7a3 3 0 0 1 3 3v7M42 32v7a3 3 0 0 1-3 3h-7M16 42H9a3 3 0 0 1-3-3v-7" />
+      <rect x="14" y="14" width="8" height="8" rx="1" />
+      <rect x="26" y="14" width="8" height="8" rx="1" />
+      <rect x="14" y="26" width="8" height="8" rx="1" />
+      <path d="M27 27h2v2M33 27v.01M27 33h.01M31 31h3v3" />
+    </svg>
+  );
+}
+
 /** Clave única por movimiento: un reintento la reutiliza para que el servidor no lo registre dos veces. */
 function newRequestId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -173,30 +190,32 @@ export function Scanner({
   const success = result?.kind === "card" && lastEarn !== null && showSuccess ? { card: result, earn: lastEarn } : null;
 
   return (
-    <div className="mx-auto max-w-md space-y-4">
+    <div data-scanner className="mx-auto max-w-md space-y-4">
       <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {pending ? PENDING_TEXT[pendingKind] : (message?.text ?? "")}
       </p>
 
       {locations.length > 1 && (
-        <select
-          aria-label="Sucursal"
-          value={locationId}
-          onChange={(e) => {
-            setLocationId(e.target.value);
-            try {
-              localStorage.setItem("scanner.location", e.target.value);
-            } catch {}
-          }}
-          className={`w-full rounded-lg border bg-white px-3 py-2 text-sm ${needsLocation ? "border-amber-500" : "border-stone-300"}`}
-        >
-          <option value="">Elige la sucursal…</option>
-          {locations.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-            </option>
-          ))}
-        </select>
+        <label className="block space-y-1">
+          <span className={LABEL}>Sucursal</span>
+          <select
+            value={locationId}
+            onChange={(e) => {
+              setLocationId(e.target.value);
+              try {
+                localStorage.setItem("scanner.location", e.target.value);
+              } catch {}
+            }}
+            className={needsLocation ? FIELD.replace("border-stone-400", "border-amber-600") : FIELD}
+          >
+            <option value="">Elige la sucursal…</option>
+            {locations.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
 
       {!result && (
@@ -210,13 +229,11 @@ export function Scanner({
                 setMessage(null);
                 setCamera(true);
               }}
-              className="flex aspect-square w-full flex-col items-center justify-center gap-3 rounded-3xl bg-stone-900 text-white shadow-lg active:scale-[0.99]"
+              className="flex aspect-square max-h-[min(28rem,60svh)] w-full flex-col items-center justify-center gap-3 rounded-3xl bg-stone-900 text-white shadow-lg active:scale-[0.99]"
             >
-              <span className="text-6xl" aria-hidden="true">
-                ⧉
-              </span>
-              <span className="text-lg font-semibold">Escanear QR</span>
-              <span className="text-xs text-stone-400">Tarjeta de lealtad o cupón</span>
+              <QrIcon className="size-16" />
+              <span className="text-xl font-semibold">Escanear QR</span>
+              <span className="text-sm text-stone-300">Tarjeta de lealtad o cupón</span>
             </button>
           )}
           <ManualEntry onCode={lookup} onEdit={() => setMessage((m) => (m?.tone === "error" ? null : m))} disabled={pending} />
@@ -235,7 +252,7 @@ export function Scanner({
               type="button"
               onClick={message.retry}
               disabled={pending}
-              className="shrink-0 rounded-lg bg-red-800 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+              className="min-h-11 shrink-0 rounded-lg bg-red-800 px-4 text-sm font-bold text-white disabled:opacity-50"
             >
               Reintentar
             </button>
@@ -318,7 +335,7 @@ export function Scanner({
         />
       )}
       {result && !success && (
-        <button type="button" onClick={nextCustomer} className="w-full rounded-xl border border-stone-300 bg-white py-3 font-semibold">
+        <button type="button" onClick={nextCustomer} className="min-h-12 w-full rounded-xl border border-stone-400 bg-white font-semibold">
           Siguiente cliente
         </button>
       )}
@@ -365,13 +382,13 @@ function CameraReader({ onCode, onClose }: { onCode: (c: string) => void; onClos
               setError(null);
               setAttempt((a) => a + 1);
             }}
-            className="w-full rounded-xl bg-red-800 py-3 font-bold text-white"
+            className="min-h-12 w-full rounded-xl bg-red-800 font-bold text-white"
           >
             Reintentar cámara
           </button>
         </div>
       )}
-      <button type="button" onClick={onClose} className="w-full rounded-xl border border-stone-300 bg-white py-2 text-sm font-semibold">
+      <button type="button" onClick={onClose} className="min-h-12 w-full rounded-xl border border-stone-400 bg-white font-semibold">
         Cerrar cámara
       </button>
     </div>
@@ -391,32 +408,46 @@ function ManualEntry({ onCode, onEdit, disabled }: { onCode: (c: string) => void
   const [search, setSearch] = useState<SearchState>({ status: "idle" });
   const [, start] = useTransition();
   return (
-    <div className="space-y-3 rounded-2xl border border-stone-200 bg-white p-4">
+    <div className="space-y-4 rounded-2xl border border-stone-200 bg-white p-4">
       <form
-        className="flex gap-2"
+        className="space-y-1"
         onSubmit={(e) => {
           e.preventDefault();
           if (code.trim()) onCode(code.trim());
         }}
       >
-        <input
-          value={code}
-          onChange={(e) => {
-            setCode(e.target.value);
-            onEdit();
-          }}
-          placeholder="Código de tarjeta o cupón"
-          className="w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-sm uppercase"
-          autoCapitalize="characters"
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <button disabled={disabled || !code.trim()} className="rounded-lg bg-stone-900 px-4 text-sm font-semibold text-white disabled:opacity-50">
-          Buscar
-        </button>
+        <label htmlFor="scan-code" className={LABEL}>
+          Código de tarjeta o cupón
+        </label>
+        <div className="flex gap-2">
+          <input
+            id="scan-code"
+            aria-describedby="scan-code-hint"
+            value={code}
+            onChange={(e) => {
+              setCode(e.target.value);
+              onEdit();
+            }}
+            placeholder="C… o P…"
+            className={`${FIELD} font-mono uppercase`}
+            autoCapitalize="characters"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button
+            aria-label="Buscar código"
+            disabled={disabled || !code.trim()}
+            className="min-h-12 shrink-0 rounded-lg bg-stone-900 px-4 font-semibold text-white disabled:opacity-50"
+          >
+            Buscar
+          </button>
+        </div>
+        <p id="scan-code-hint" className="text-sm text-stone-600">
+          Las tarjetas empiezan con C y los cupones con P.
+        </p>
       </form>
       <form
-        className="flex gap-2"
+        className="space-y-1"
         onSubmit={(e) => {
           e.preventDefault();
           const term = q.trim();
@@ -435,23 +466,31 @@ function ManualEntry({ onCode, onEdit, disabled }: { onCode: (c: string) => void
           });
         }}
       >
-        <input
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            onEdit();
-            if (search.status !== "idle" && search.status !== "searching") setSearch({ status: "idle" });
-          }}
-          placeholder="…o teléfono / nombre del cliente"
-          className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
-          autoComplete="off"
-        />
-        <button
-          disabled={search.status === "searching"}
-          className="rounded-lg border border-stone-300 px-4 text-sm font-semibold disabled:opacity-50"
-        >
-          Buscar
-        </button>
+        <label htmlFor="scan-search" className={LABEL}>
+          Buscar cliente sin tarjeta
+        </label>
+        <div className="flex gap-2">
+          <input
+            id="scan-search"
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value);
+              onEdit();
+              if (search.status !== "idle" && search.status !== "searching") setSearch({ status: "idle" });
+            }}
+            placeholder="Teléfono o nombre"
+            className={FIELD}
+            autoComplete="off"
+            enterKeyHint="search"
+          />
+          <button
+            aria-label="Buscar cliente"
+            disabled={search.status === "searching"}
+            className="min-h-12 shrink-0 rounded-lg border border-stone-400 px-4 font-semibold disabled:opacity-50"
+          >
+            Buscar
+          </button>
+        </div>
       </form>
       <div aria-live="polite">
         {search.status === "searching" && <p className="text-sm text-stone-500">Buscando…</p>}
@@ -463,10 +502,10 @@ function ManualEntry({ onCode, onEdit, disabled }: { onCode: (c: string) => void
           </p>
         )}
         {search.status === "done" && search.customers.length > 0 && (
-          <ul className="divide-y divide-stone-100 text-sm">
+          <ul className="divide-y divide-stone-100 text-base">
             {search.customers.map((f) => (
               <li key={f.serial}>
-                <button type="button" className="flex w-full justify-between gap-3 py-2 text-left" onClick={() => onCode(f.serial)}>
+                <button type="button" className="flex min-h-12 w-full items-center justify-between gap-3 text-left" onClick={() => onCode(f.serial)}>
                   <span className="min-w-0 truncate font-medium">{f.name}</span>
                   <span className="shrink-0 text-stone-500">{f.phone}</span>
                 </button>
@@ -586,7 +625,7 @@ function CardPanel({
             <button
               type="button"
               onClick={onUnlockEarn}
-              className="rounded-lg border border-emerald-800/30 bg-white px-3 py-2 text-sm font-semibold text-emerald-900"
+              className="min-h-11 rounded-lg border border-emerald-800/30 bg-white px-3 text-sm font-semibold text-emerald-900"
             >
               {isStamps ? "Registrar otra visita" : "Registrar otra compra"}
             </button>
@@ -602,14 +641,18 @@ function CardPanel({
           >
             {needsAmount && (
               <>
+                <label htmlFor="scan-amount" className="sr-only">
+                  Monto de la compra en {program.currency}
+                </label>
                 <input
+                  id="scan-amount"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   inputMode="decimal"
                   enterKeyHint="done"
                   autoComplete="off"
                   placeholder={`Monto de la compra (${program.currency})`}
-                  className="w-full rounded-lg border border-stone-300 px-3 py-3 text-lg"
+                  className={`${FIELD} min-h-14 text-lg tabular-nums`}
                 />
                 {amount.trim() !== "" && (
                   <p className={`text-sm ${cents > 0 ? "text-stone-600" : "font-semibold text-red-700"}`}>
@@ -620,7 +663,7 @@ function CardPanel({
             )}
             <button
               disabled={disabled || (needsAmount && cents <= 0)}
-              className="w-full rounded-xl bg-brand-600 py-3 text-base font-bold text-white disabled:opacity-50"
+              className="min-h-14 w-full rounded-xl bg-brand-700 text-lg font-bold text-white disabled:opacity-50"
             >
               {isStamps ? "+1 sello" : program.type === "POINTS" ? "Sumar puntos" : "Sumar al monedero"}
             </button>
@@ -633,7 +676,7 @@ function CardPanel({
           disabled={disabled}
           onConfirm={() => onRedeemReward(undefined)}
           confirmLabel={`Confirmar canje: ${program.stampReward}`}
-          className="w-full rounded-xl bg-emerald-600 py-3 font-bold text-white"
+          className="min-h-12 w-full rounded-xl bg-emerald-700 px-3 font-bold text-white"
         >
           Canjear {program.stampReward}
           {card.rewardsAvailable > 1 && <span className="font-normal"> · {card.rewardsAvailable} disponibles</span>}
@@ -649,7 +692,7 @@ function CardPanel({
               disabled={disabled || card.points < r.pointsCost}
               onConfirm={() => onRedeemReward(r.id)}
               confirmLabel={`Confirmar canje: ${r.name}`}
-              className="flex w-full justify-between rounded-lg border border-stone-200 px-3 py-2 text-sm"
+              className="flex min-h-12 w-full items-center justify-between gap-3 rounded-lg border border-stone-300 px-3 text-left"
             >
               <span>{r.name}</span>
               <span className="font-semibold">{r.pointsCost} pts</span>
@@ -663,17 +706,18 @@ function CardPanel({
           <div className="text-sm font-semibold">Usar saldo (disponible {money(card.cashbackCents, program.currency)})</div>
           <div className="flex gap-2">
             <input
+              aria-label="Monto a usar del monedero"
               value={redeemAmount}
               onChange={(e) => setRedeemAmount(e.target.value)}
               inputMode="decimal"
               autoComplete="off"
               placeholder="Monto a usar"
-              className="w-full rounded-lg border border-stone-300 px-3 py-2"
+              className={`${FIELD} tabular-nums`}
             />
             <button
               type="button"
               onClick={() => setRedeemAmount((card.cashbackCents / 100).toFixed(2))}
-              className="shrink-0 rounded-lg border border-stone-300 bg-white px-3 text-xs font-semibold"
+              className="min-h-12 shrink-0 rounded-lg border border-stone-400 bg-white px-4 text-sm font-semibold"
             >
               Todo
             </button>
@@ -688,7 +732,7 @@ function CardPanel({
             disabled={disabled || redeemCents <= 0 || redeemCents > card.cashbackCents}
             onConfirm={() => onRedeemCashback(redeemCents)}
             confirmLabel={`Confirmar: descontar ${money(redeemCents, program.currency)}`}
-            className="w-full rounded-xl bg-emerald-600 py-2.5 font-bold text-white"
+            className="min-h-12 w-full rounded-xl bg-emerald-700 px-3 font-bold text-white"
           >
             Descontar del monedero
           </ConfirmButton>
@@ -711,7 +755,7 @@ function CardPanel({
                 disabled={disabled}
                 onConfirm={() => onRedeemCoupon(c.code)}
                 confirmLabel="Confirmar"
-                className="shrink-0 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white"
+                className="min-h-11 shrink-0 rounded-lg bg-brand-700 px-4 text-sm font-bold text-white"
               >
                 Canjear
               </ConfirmButton>
@@ -835,7 +879,7 @@ function SuccessPanel({
             disabled={busy || !canRedeem}
             onConfirm={onRedeemNow}
             confirmLabel={`Confirmar canje: ${program.stampReward}`}
-            className="w-full rounded-xl bg-brand-700 py-3 font-bold text-white"
+            className="min-h-12 w-full rounded-xl bg-brand-700 font-bold text-white"
           >
             Canjear ahora
           </ConfirmButton>
@@ -864,7 +908,7 @@ function SuccessPanel({
           type="button"
           onClick={onUndo}
           disabled={busy}
-          className="w-full rounded-xl border border-stone-300 bg-white py-3 font-semibold text-stone-800 disabled:opacity-50"
+          className="min-h-12 w-full rounded-xl border border-stone-400 bg-white font-semibold text-stone-800 disabled:opacity-50"
         >
           Deshacer <span className="font-normal text-stone-500 tabular-nums">({secondsLeft} s)</span>
         </button>
@@ -872,7 +916,7 @@ function SuccessPanel({
         <p className="text-sm text-stone-600">¿Hubo un error? Pide al encargado un ajuste en el panel.</p>
       )}
 
-      <button type="button" onClick={onShowCard} className="text-sm font-semibold text-stone-700 underline underline-offset-4">
+      <button type="button" onClick={onShowCard} className="inline-flex min-h-11 items-center px-3 text-sm font-semibold text-stone-700 underline underline-offset-4">
         Ver tarjeta y canjes
       </button>
     </section>
@@ -894,7 +938,7 @@ function CouponPanel({ coupon, disabled, onRedeem }: { coupon: ScanCoupon; disab
           disabled={disabled}
           onConfirm={onRedeem}
           confirmLabel={`Confirmar canje: ${coupon.title}`}
-          className="w-full rounded-xl bg-brand-600 py-3 font-bold text-white"
+          className="min-h-12 w-full rounded-xl bg-brand-700 px-3 font-bold text-white"
         >
           Canjear cupón
         </ConfirmButton>

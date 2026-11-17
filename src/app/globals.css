@@ -45,6 +45,12 @@ body {
   color: var(--color-ink);
 }
 
+/* Escáner: un anillo de foco visible sobre fondos claros y oscuros para cada control. */
+[data-scanner] :is(button, a, select, input):focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
 /* Ajustes para html5-qrcode */
 #qr-reader {
   border: none !important;
