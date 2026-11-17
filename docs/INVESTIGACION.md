@@ -76,10 +76,11 @@ Resumen de requisitos técnicos, costos, herramientas gratuitas y limitaciones r
 
 | Opción | Costo | Notas |
 |---|---|---|
-| **Oracle Cloud Always Free** (VM ARM) + Docker | Gratis | Uso comercial permitido; tú administras el servidor. Usa Caddy para HTTPS gratis (Let's Encrypt). |
+| **Render** (web, Docker) | Gratis: 750 h/mes, se duerme tras 15 min | Recomendado para la prueba: dominio propio con HTTPS gratis, `render.yaml` incluido. Mantenerlo despierto con un ping cada 10 min (cron-job.org). |
+| Oracle Cloud Always Free (VM ARM) + Docker | Gratis | Siempre encendido, pero el registro (con verificación de tarjeta) puede no completarse. |
+| Koyeb | Gratis: 1 servicio (512 MB) | Se duerme tras 1 h sin tráfico; solo regiones Frankfurt/Washington. |
 | **Neon** (Postgres) | Gratis hasta 0.5 GB | Escala a cero; ideal para empezar. Supabase también tiene plan gratis (pausa tras 1 semana sin uso). |
-| Render (web) | Gratis con suspensión tras 15 min | El arranque en frío (~30 s) puede hacer fallar las peticiones de Apple/Google; mejor el plan de pago. |
-| Vercel | Hobby gratis **solo uso no comercial**; Pro US$20/mes | Cuando ya cobres, Vercel Pro + Neon es lo más sencillo. |
+| Vercel | Hobby gratis **solo uso no comercial**; Pro US$20/mes | No se duerme; bueno para pruebas. Cuando ya cobres, Vercel Pro + Neon es lo más sencillo. |
 | Dominio | ~MX$250–400/año | Obligatorio: Apple y Google requieren una URL HTTPS estable. |
 
 ### Tareas programadas (automatizaciones diarias)

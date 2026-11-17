@@ -10,7 +10,7 @@ Mientras falte alguna integración, la plataforma funciona igual con la tarjeta 
 1. Necesitas una URL **HTTPS** pública y estable (Apple y Google la usan), pero **no hace falta comprar un dominio nuevo**:
    un subdominio de un dominio que ya tengas funciona igual, p. ej. `lealtio.wabistudio.com.mx`.
    - En el panel DNS donde administras `wabistudio.com.mx` crea un registro para `lealtio`:
-     `A` → IP de tu servidor (VPS/Oracle Cloud), o `CNAME` → el host que te dé Render/Vercel.
+     `CNAME` → el host que te dé Render/Vercel, o `A` → IP de tu servidor si usas un VPS.
    - Apple y Google no verifican la propiedad del dominio para los pases; solo exigen HTTPS válido (Caddy, Render y Vercel lo dan gratis).
    - **Elige bien desde el inicio:** la URL queda grabada en cada pase de Apple instalado. Si después compras `lealt.io`,
      deja el subdominio viejo apuntando al mismo servidor para que esos pases sigan actualizándose.
@@ -27,7 +27,25 @@ Mientras falte alguna integración, la plataforma funciona igual con la tarjeta 
    SUPERADMIN_EMAILS=tu@correo.com
    ```
 4. Despliegue — elige uno:
-   - **Servidor propio (gratis con Oracle Cloud Always Free, o cualquier VPS):**
+   - **Render + Neon (recomendado para empezar, $0):**
+     1. En [Neon](https://neon.tech) crea un proyecto en la región **AWS us-east-2 (Ohio)**. En *Connect* desactiva
+        *Connection pooling* y copia esa cadena **directa** (la que no dice `-pooler`): será `DATABASE_URL`.
+     2. Sube el repositorio a GitHub (ya está) y en [Render](https://render.com) elige *New → Blueprint* con este repositorio.
+        El archivo `render.yaml` crea el servicio gratuito con Docker; las migraciones se aplican solas al arrancar.
+        Llena `DATABASE_URL`, `APP_URL` y `SUPERADMIN_EMAILS`. Las variables de Apple y Google puedes dejarlas vacías
+        y agregarlas después en *Environment*.
+     3. *Settings → Custom Domains → Add* `lealtio.wabistudio.com.mx`. En el DNS de `wabistudio.com.mx` crea el
+        `CNAME lealtio → <tu-servicio>.onrender.com` que te indique Render; el certificado HTTPS es automático.
+     4. **Mantenerlo despierto:** el plan gratis se duerme tras 15 min sin visitas y tarda ~1 min en despertar (mala
+        experiencia para el primer cliente del día). En [cron-job.org](https://cron-job.org) (gratis) crea un ping a
+        `https://lealtio.wabistudio.com.mx/api/health` cada 10 minutos en tu horario de servicio (p. ej. 7:00–22:00).
+        Las 750 horas gratis al mes alcanzan incluso 24/7 para un servicio. `/api/health` no toca la base de datos,
+        así Neon puede dormir y no gasta sus horas gratis.
+     5. En cron-job.org crea también la tarea diaria de automatizaciones (sección 5).
+   - **Vercel Hobby + Neon (gratis, sin servidores que duerman):** importa el repo en Vercel, agrega las variables, y ejecuta
+     `npx prisma migrate deploy` con la `DATABASE_URL` de Neon desde tu computadora. Es lo más rápido, pero el plan Hobby es
+     solo para uso no comercial: sirve para probar; cambia a Pro (US$20/mes) o a Render cuando lo uses con clientes reales.
+   - **Servidor propio (cualquier VPS o computadora encendida 24/7):**
      ```bash
      docker compose --profile app up -d --build
      ```
@@ -37,8 +55,6 @@ Mientras falte alguna integración, la plataforma funciona igual con la tarjeta 
        reverse_proxy localhost:3000
      }
      ```
-   - **Vercel + Neon:** importa el repo en Vercel, agrega las variables y ejecuta `npx prisma migrate deploy` contra la base de Neon.
-     El plan Hobby de Vercel es solo para uso no comercial: usa Pro cuando ya cobres.
 5. Crea tu cuenta: regístrate en `/registro` con el correo que pusiste en `SUPERADMIN_EMAILS`; verás el superadmin en `/admin`.
    (Para probar con datos de ejemplo: `npm run db:seed`.)
 

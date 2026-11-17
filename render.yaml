@@ -1,0 +1,40 @@
+# Blueprint de Render (https://render.com/docs/blueprint-spec)
+# En Render: New → Blueprint → elige este repositorio. Te pedirá los valores marcados con sync: false.
+services:
+  - type: web
+    name: lealtio
+    runtime: docker
+    plan: free
+    region: ohio # usa Neon en AWS us-east-2 (Ohio) para menor latencia
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false # cadena de conexión DIRECTA de Neon (sin "-pooler")
+      - key: APP_URL
+        sync: false # p. ej. https://lealtio.wabistudio.com.mx
+      - key: NEXT_PUBLIC_APP_NAME
+        value: Lealt.io
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+      - key: SUPERADMIN_EMAILS
+        sync: false
+      # Apple Wallet
+      - key: APPLE_PASS_TYPE_ID
+        sync: false
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: APPLE_PASS_CERT
+        sync: false
+      - key: APPLE_PASS_KEY
+        sync: false
+      - key: APPLE_WWDR_CERT
+        sync: false
+      # Google Wallet
+      - key: GOOGLE_WALLET_ISSUER_ID
+        sync: false
+      - key: GOOGLE_SA_EMAIL
+        sync: false
+      - key: GOOGLE_SA_PRIVATE_KEY
+        sync: false
