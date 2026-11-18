@@ -145,7 +145,7 @@ escáner deja de registrar movimientos (los clientes conservan su tarjeta y sald
 
 ## 5. Automatizaciones diarias
 
-`/api/cron` expira cupones, envía felicitaciones de cumpleaños (+ cupón si hay una promoción "En su cumpleaños") y recordatorios
+`/api/cron` reactiva el aviso de cercanía de las tarjetas que lo tenían oculto desde su visita del día anterior (opción *Ocultar el aviso después de la visita* en Sucursales; **sin esta tarea el aviso no vuelve**), expira cupones, envía felicitaciones de cumpleaños (+ cupón si hay una promoción "En su cumpleaños") y recordatorios
 de inactividad (+ cupón "Recordatorio de inactividad"). Prográmalo una vez al día con `Authorization: Bearer $CRON_SECRET`:
 
 - **GitHub Actions (gratis):** `.github/workflows/cron.yml` ya está incluido. Agrega los secretos `APP_URL` y `CRON_SECRET`

@@ -223,6 +223,7 @@ export async function purchaseAction(
       after(() =>
         syncCard(cardId, {
           notifyBalance: true,
+          includeCoupons: r.nearbyMuted,
           ...(r.milestone ? { message: { title: b.name, body: r.milestone } } : {}),
         }),
       );
@@ -250,7 +251,7 @@ export async function undoPurchaseAction(requestId: string): Promise<ScanResult>
     const id = cleanId(requestId);
     if (!id) throw new LoyaltyError("No se encontró el registro para deshacer");
     const r = await undoPurchase({ staffId: user.id, businessId: user.business.id }, id);
-    after(() => syncCard(r.cardId));
+    after(() => syncCard(r.cardId, { includeCoupons: true }));
     return { ok: true, data: await cardData(r.cardId), message: `Se deshizo: ${r.description}` };
   } catch (e) {
     return fail(e);

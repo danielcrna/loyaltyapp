@@ -9,6 +9,7 @@ import {
   computeRedeemReward,
   computeWelcome,
   computeRedeemTier,
+  nextLocalHour,
   stampRules,
   stampStatus,
   tiersReached,
@@ -298,6 +299,14 @@ export async function recordPurchase(ctx: StaffCtx, cardId: string, purchaseCent
       countsAsVisit: true,
     });
 
+    // El cliente ya está en caja: el pase se actualiza sin ubicaciones hasta mañana temprano,
+    // así deja de mostrarse la sugerencia de cercanía en su pantalla bloqueada.
+    const nearbyMuted = business.hideNearbyAfterVisit;
+    if (nearbyMuted) {
+      await tx.loyaltyCard.update({ where: { id: cardId }, data: { nearbyMutedUntil: nextLocalHour(business.timezone, 5) } });
+      await tx.customerCoupon.updateMany({ where: { customerId: card.customerId, status: "ACTIVE" }, data: { updatedAt: new Date() } });
+    }
+
     let milestone: string | null = null;
     if (business.programType === "STAMPS") {
       const rules = stampRules(business);
@@ -312,7 +321,7 @@ export async function recordPurchase(ctx: StaffCtx, cardId: string, purchaseCent
       }
       if (milestone) await tx.loyaltyCard.update({ where: { id: cardId }, data: { lastMessage: milestone } });
     }
-    return { tx: t, delta, earnedReward: delta.rewardsDelta > 0, milestone };
+    return { tx: t, delta, earnedReward: delta.rewardsDelta > 0, milestone, nearbyMuted };
   });
 }
 
@@ -367,12 +376,15 @@ export async function undoPurchase(ctx: { staffId: string; businessId: string },
         totalSpentCents: { decrement: orig.purchaseCents },
         visits: { decrement: 1 },
         lastVisitAt: prevVisit?.createdAt ?? null,
+        nearbyMutedUntil: null,
         // Si esa visita había generado el aviso de nivel/tarjeta completa, ya no aplica
         ...(card.lastMessage && /^¡(Ya puedes canjear|Completaste tu tarjeta)/.test(card.lastMessage) && (orig.stampsDelta || orig.rewardsDelta)
           ? { lastMessage: "Se corrigió tu último registro de visita." }
           : {}),
       },
     });
+    // Sus cupones también vuelven a llevar ubicaciones
+    await tx.customerCoupon.updateMany({ where: { customerId: card.customerId, status: "ACTIVE" }, data: { updatedAt: new Date() } });
     await tx.transaction.delete({ where: { id: orig.id } });
     const { currency } = await tx.business.findUniqueOrThrow({ where: { id: orig.businessId }, select: { currency: true } });
     const amount = orig.purchaseCents > 0 ? ` de ${formatMoney(orig.purchaseCents, currency)}` : "";

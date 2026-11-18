@@ -45,3 +45,13 @@ export async function updateLocationAction(fd: FormData) {
   after(() => syncBusinessDesign(user.business.id));
   revalidatePath("/dashboard/sucursales");
 }
+
+/** Activa/desactiva ocultar el aviso de cercanía del pase después de registrar la visita del cliente. */
+export async function setHideNearbyAction(fd: FormData) {
+  const user = await requireBusinessUser(MANAGERS);
+  await db.business.update({
+    where: { id: user.business.id },
+    data: { hideNearbyAfterVisit: fd.get("value") === "on" },
+  });
+  revalidatePath("/dashboard/sucursales");
+}

@@ -201,3 +201,38 @@ export function stampGrid(total: number) {
   const rows = n <= 5 ? 1 : 2;
   return { n, rows, perRow: Math.ceil(n / rows) };
 }
+
+/**
+ * Siguiente "hh:00" local en la zona horaria del negocio, estrictamente después de `now`.
+ * Se usa para silenciar el aviso de cercanía del pase hasta la mañana siguiente a la visita.
+ */
+export function nextLocalHour(timeZone: string, hour = 5, now = new Date()): Date {
+  const parts = (d: Date) => {
+    const p = Object.fromEntries(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hourCycle: "h23",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+        .formatToParts(d)
+        .map((x) => [x.type, x.value]),
+    );
+    return { y: +p.year, m: +p.month, d: +p.day, h: +p.hour, mi: +p.minute, s: +p.second };
+  };
+  // Convierte una hora local (y, m, d, h) a instante UTC usando el desfase de esa zona en ese momento
+  const localToUtc = (y: number, m: number, d: number, h: number) => {
+    const guess = Date.UTC(y, m - 1, d, h);
+    const lp = parts(new Date(guess));
+    const offset = Date.UTC(lp.y, lp.m - 1, lp.d, lp.h, lp.mi, lp.s) - guess;
+    return new Date(guess - offset);
+  };
+  const t = parts(now);
+  const today = localToUtc(t.y, t.m, t.d, hour);
+  if (today > now) return today;
+  return localToUtc(t.y, t.m, t.d + 1, hour);
+}

@@ -2,6 +2,7 @@ import "server-only";
 import { PKPass } from "passkit-generator";
 import type { Business, CustomerCoupon, Customer, Location, LoyaltyCard, Media, Promotion } from "@prisma/client";
 import { config, publicUrl } from "../config";
+import { db } from "../db";
 import { renderIcon, renderPassLogo, renderStampStrip, renderStrip } from "../images";
 import { balanceSummary, stampRewardLine, stampRules } from "../loyalty";
 import { formatDate, formatMoney } from "../format";
@@ -218,7 +219,9 @@ export async function buildLoyaltyPass(
     altText: card.serial,
   });
 
-  const locations = passLocations(business);
+  // Sin ubicaciones mientras el aviso de cercanía está silenciado (el cliente ya visitó hoy)
+  const muted = card.nearbyMutedUntil && card.nearbyMutedUntil > new Date();
+  const locations = muted ? [] : passLocations(business);
   if (locations.length) pass.setLocations(...locations);
 
   return pass.getAsBuffer();
@@ -269,7 +272,9 @@ export async function buildCouponPass(
   pass.backFields.push({ key: "link", label: "Ver cupón", value: publicUrl(`/cupon/${coupon.code}`) });
 
   pass.setBarcodes({ format: "PKBarcodeFormatQR", message: coupon.code, messageEncoding: "iso-8859-1", altText: coupon.code });
-  const locations = passLocations(business).map((l) => ({
+  const card = await db.loyaltyCard.findUnique({ where: { customerId: coupon.customerId }, select: { nearbyMutedUntil: true } });
+  const muted = card?.nearbyMutedUntil && card.nearbyMutedUntil > new Date();
+  const locations = (muted ? [] : passLocations(business)).map((l) => ({
     ...l,
     relevantText: `Usa tu cupón "${p.title}" en ${business.name}`.slice(0, 120),
   }));

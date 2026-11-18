@@ -81,9 +81,12 @@ model Business {
   brandLogo   Media?  @relation("BusinessBrandLogo", fields: [brandLogoId], references: [id])
 
   // Recordatorios automáticos
-  winbackDays     Int    @default(30) // días sin visita para enviar recordatorio (0 = desactivado)
-  winbackMessage  String @default("¡Te extrañamos! Ven a visitarnos y sigue sumando en tu tarjeta.")
-  birthdayMessage String @default("¡Feliz cumpleaños! Tenemos un regalo para ti en tu próxima visita.")
+  // Tras registrar una visita, el pase de Apple se actualiza sin ubicaciones hasta el día siguiente,
+  // para que la sugerencia de cercanía deje de mostrarse en la pantalla bloqueada del cliente.
+  hideNearbyAfterVisit Boolean @default(true)
+  winbackDays          Int     @default(30) // días sin visita para enviar recordatorio (0 = desactivado)
+  winbackMessage       String  @default("¡Te extrañamos! Ven a visitarnos y sigue sumando en tu tarjeta.")
+  birthdayMessage      String  @default("¡Feliz cumpleaños! Tenemos un regalo para ti en tu próxima visita.")
 
   // Formulario de inscripción
   askEmail    Boolean @default(true)
@@ -202,6 +205,7 @@ model LoyaltyCard {
   lifetimePoints   Int       @default(0)
   lastVisitAt      DateTime?
   lastMessage      String? // último mensaje enviado al pase (aparece como notificación)
+  nearbyMutedUntil DateTime? // sin ubicaciones en el pase hasta esta fecha (ver hideNearbyAfterVisit)
   lastReminderAt   DateTime?
   lastBirthdayYear Int?
   appleInstalled   Boolean   @default(false)

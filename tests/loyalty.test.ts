@@ -147,3 +147,15 @@ describe("niveles de sellos", () => {
     expect(applyDelta(full, computeEarn({ ...base, stampsRequired: 10 }, full, 0))).toEqual({ ...empty, stamps: 0, rewardsAvailable: 1 });
   });
 });
+
+describe("silenciar aviso de cercanía", () => {
+  it("calcula la siguiente mañana local", async () => {
+    const { nextLocalHour } = await import("@/lib/loyalty");
+    // 14:00 en CDMX (UTC-6) → mañana 05:00 local = 11:00 UTC
+    expect(nextLocalHour("America/Mexico_City", 5, new Date("2026-11-18T20:00:00Z")).toISOString()).toBe("2026-11-19T11:00:00.000Z");
+    // 01:00 local → hoy mismo a las 05:00
+    expect(nextLocalHour("America/Mexico_City", 5, new Date("2026-11-18T07:00:00Z")).toISOString()).toBe("2026-11-18T11:00:00.000Z");
+    // Zona con horario de verano (Tijuana, noviembre = UTC-8)
+    expect(nextLocalHour("America/Tijuana", 5, new Date("2026-11-18T20:00:00Z")).toISOString()).toBe("2026-11-19T13:00:00.000Z");
+  });
+});

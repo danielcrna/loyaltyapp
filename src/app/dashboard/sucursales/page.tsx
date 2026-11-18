@@ -4,7 +4,7 @@ import { getPlan } from "@/lib/plans";
 import { ActionForm, SubmitButton } from "@/components/action-form";
 import { Badge, Card, EmptyState, Field, Input, Notice, PageHeader } from "@/components/ui";
 import { GeoButton } from "@/components/geo-button";
-import { addLocationAction, updateLocationAction } from "./actions";
+import { addLocationAction, setHideNearbyAction, updateLocationAction } from "./actions";
 
 export const metadata = { title: "Sucursales" };
 
@@ -24,6 +24,26 @@ export default async function LocationsPage() {
           al estar a ~100 m de la sucursal (requiere que el cliente tenga la ubicación activada; iOS decide cuándo mostrarlo). En Android,
           Google Wallet envía su propia notificación de “pase cercano” con texto definido por Google. Máximo 10 ubicaciones por tarjeta.
         </Notice>
+        <Card className="mt-4">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-2xl">
+              <h3 className="font-semibold">
+                Ocultar el aviso después de la visita {b.hideNearbyAfterVisit ? <Badge tone="green">Activado</Badge> : <Badge>Desactivado</Badge>}
+              </h3>
+              <p className="mt-1 text-sm text-stone-600">
+                En iPhone el cliente no puede descartar el aviso de cercanía: iOS lo deja en la pantalla bloqueada mientras esté cerca. Con
+                esta opción, al registrar su visita en el escáner su tarjeta (y sus cupones) se actualizan sin ubicaciones y el aviso
+                desaparece; vuelve a activarse a las 5:00 a. m. del día siguiente con la tarea diaria de automatizaciones.
+              </p>
+            </div>
+            <form action={setHideNearbyAction}>
+              <input type="hidden" name="value" value={b.hideNearbyAfterVisit ? "off" : "on"} />
+              <button className="rounded-lg border border-stone-300 px-3 py-1.5 text-sm font-semibold">
+                {b.hideNearbyAfterVisit ? "Desactivar" : "Activar"}
+              </button>
+            </form>
+          </div>
+        </Card>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">

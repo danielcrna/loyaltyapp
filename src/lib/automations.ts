@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import { issueCoupons, isPromotionLive } from "./services";
-import { broadcastMessage } from "./wallet/sync";
+import { broadcastMessage, unmuteNearby } from "./wallet/sync";
 
 /**
  * Tareas automáticas (ejecutar una vez al día vía /api/cron):
@@ -10,7 +10,10 @@ import { broadcastMessage } from "./wallet/sync";
  * 3. Recordatorio de inactividad ("te extrañamos") + cupones WINBACK.
  */
 export async function runDailyAutomations(now = new Date()) {
-  const report = { expiredCoupons: 0, birthdays: 0, winback: 0, businesses: 0 };
+  const report = { expiredCoupons: 0, birthdays: 0, winback: 0, businesses: 0, nearbyReenabled: 0 };
+
+  // Reactiva el aviso de cercanía de quienes visitaron ayer (ver hideNearbyAfterVisit)
+  report.nearbyReenabled = await unmuteNearby(now);
 
   const expired = await db.customerCoupon.updateMany({
     where: { status: "ACTIVE", expiresAt: { lt: now } },

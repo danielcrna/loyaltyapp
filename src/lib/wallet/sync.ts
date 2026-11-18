@@ -38,13 +38,18 @@ function logError(scope: string, e: unknown) {
 }
 
 /** Sincroniza la tarjeta de un cliente en Apple y Google. */
-export async function syncCard(cardId: string, opts: { notifyBalance?: boolean; message?: { title: string; body: string } } = {}) {
+export async function syncCard(
+  cardId: string,
+  opts: { notifyBalance?: boolean; message?: { title: string; body: string }; includeCoupons?: boolean } = {},
+) {
   const card = await db.loyaltyCard.findUnique({ where: { id: cardId }, include: { customer: true } });
   if (!card) return;
 
   if (config.apple.enabled) {
     try {
-      await pushPassUpdates([card.serial]);
+      // includeCoupons: también los pases de cupón del cliente (p. ej. al silenciar el aviso de cercanía)
+      const codes = opts.includeCoupons ? (await activeCouponsFor(card.customerId)).map((c) => c.code) : [];
+      await pushPassUpdates([card.serial, ...codes]);
     } catch (e) {
       logError("apple", e);
     }
@@ -170,4 +175,32 @@ export async function syncRevokedCoupons(coupons: { id: string; code: string; cu
     for (const c of coupons) await syncCoupon(c.id);
     for (const card of cards) await syncCard(card.id);
   }
+}
+
+/**
+ * Vuelve a activar el aviso de cercanía de las tarjetas cuyo silencio ya venció:
+ * marca como modificados la tarjeta y sus cupones activos y avisa a los iPhones para que descarguen
+ * el pase de nuevo (otra vez con ubicaciones). Lo ejecuta la tarea diaria.
+ */
+export async function unmuteNearby(now = new Date()) {
+  const cards = await db.loyaltyCard.findMany({
+    where: { nearbyMutedUntil: { lte: now } },
+    select: { id: true, serial: true, customerId: true },
+    take: 5000,
+  });
+  if (!cards.length) return 0;
+  await db.loyaltyCard.updateMany({ where: { id: { in: cards.map((c) => c.id) } }, data: { nearbyMutedUntil: null, updatedAt: now } });
+  const coupons = await db.customerCoupon.findMany({
+    where: { customerId: { in: cards.map((c) => c.customerId) }, status: "ACTIVE" },
+    select: { id: true, code: true },
+  });
+  if (coupons.length) await db.customerCoupon.updateMany({ where: { id: { in: coupons.map((c) => c.id) } }, data: { updatedAt: now } });
+  if (config.apple.enabled) {
+    try {
+      await pushPassUpdates([...cards.map((c) => c.serial), ...coupons.map((c) => c.code)]);
+    } catch (e) {
+      logError("apple", e);
+    }
+  }
+  return cards.length;
 }
