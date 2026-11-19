@@ -4,7 +4,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { renderStampStrip } from "@/lib/images";
-import { stampRules } from "@/lib/loyalty";
 
 export const runtime = "nodejs";
 
@@ -25,7 +24,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ busi
     fg: b.fgColor,
     accent: b.labelColor,
     background: b.strip ? Buffer.from(b.strip.data) : null,
-    tierMarks: stampRules(b).filter((r) => !r.final).map((r) => r.stamps),
     ...(b.stampStyle === "custom" && b.stampIcon
       ? { stampImage: Buffer.from(b.stampIcon.data), emptyImage: b.stampEmptyIcon ? Buffer.from(b.stampEmptyIcon.data) : null }
       : {}),

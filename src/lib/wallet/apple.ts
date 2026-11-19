@@ -126,7 +126,6 @@ export async function buildLoyaltyPass(
             accent: business.labelColor,
             background: stripBg,
             ...stampImages(business),
-            tierMarks: stampRules(business).filter((r) => !r.final).map((r) => r.stamps),
           })
         : await renderStrip(w, h, { background: stripBg, bg: business.bgColor });
   }
