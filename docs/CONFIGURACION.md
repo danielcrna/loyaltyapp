@@ -62,18 +62,47 @@ Mientras falte alguna integración, la plataforma funciona igual con la tarjeta 
 
 ## 2. Google Wallet (gratis)
 
-1. Entra a la [Google Pay & Wallet Console](https://pay.google.com/business/console), crea tu perfil de negocio y activa **Google Wallet API**.
-   Copia el **Issuer ID** → `GOOGLE_WALLET_ISSUER_ID`.
-2. En [Google Cloud Console](https://console.cloud.google.com):
-   - Crea un proyecto y habilita **Google Wallet API**.
-   - *IAM y administración → Cuentas de servicio → Crear*. Luego *Claves → Agregar clave → JSON*.
-   - Del JSON descargado: `client_email` → `GOOGLE_SA_EMAIL`, `private_key` → `GOOGLE_SA_PRIVATE_KEY`
-     (puedes pegarla tal cual con los `\n`, o en base64).
-3. En la Wallet Console → *Usuarios*: invita el correo de la cuenta de servicio con rol **Desarrollador**.
-4. Prueba: inscríbete en `/n/<slug>` de tu negocio y pulsa "Agregar a Google Wallet". En **modo demo** solo funciona para
-   usuarios agregados como cuentas de prueba en la consola.
-5. Cuando funcione, en la consola pide **acceso de publicación** (*Request publishing access*). Google revisa la clase de un negocio
-   como ejemplo. Después, cualquier persona puede guardar pases.
+### 2.1 Proyecto de Google Cloud y API
+1. En [Google Cloud Console](https://console.cloud.google.com) crea (o elige) un proyecto, p. ej. `lealtio`.
+2. *APIs y servicios → Biblioteca* → busca **Google Wallet API** → **Habilitar**.
+
+### 2.2 Cuenta de servicio (la "identidad" con la que la app crea los pases)
+*IAM y administración → Cuentas de servicio → + Crear cuenta de servicio*:
+1. **Detalles**: *Nombre* `lealtio-wallet` (el *ID* se llena solo), *Descripción* opcional
+   ("Emite pases de Google Wallet para Lealt.io") → **Crear y continuar**.
+2. **Permisos (opcional)**: déjalo vacío → **Continuar**. No necesita roles del proyecto; el permiso se da en la Wallet Console (2.4).
+3. **Principales con acceso (opcional)**: déjalo vacío → **Listo**.
+4. Abre la cuenta creada → pestaña **Claves** → *Agregar clave → Crear clave nueva* → **JSON** → *Crear*. Se descarga un
+   archivo `.json`: guárdalo en un lugar seguro y no lo compartas ni lo subas al repositorio.
+   - Si aparece *"Service account key creation is disabled"*, tu cuenta pertenece a una organización (Google Workspace) con la
+     política `iam.disableServiceAccountKeyCreation`. Un administrador debe desactivarla para este proyecto en
+     *IAM y administración → Políticas de la organización*, o usa un proyecto creado con una cuenta personal de Gmail.
+
+### 2.3 Variables para Render
+En la Mac, desde la carpeta donde quedó el JSON (`plutil` viene con macOS):
+```bash
+plutil -extract client_email raw -o - ARCHIVO.json
+```
+→ `GOOGLE_SA_EMAIL` (termina en `.iam.gserviceaccount.com`).
+```bash
+plutil -extract private_key raw -o - ARCHIVO.json | base64 | tr -d '\n' | pbcopy
+```
+→ pega en `GOOGLE_SA_PRIVATE_KEY` (queda en el portapapeles; no se muestra en pantalla).
+
+### 2.4 Google Pay & Wallet Console
+1. En la [Google Pay & Wallet Console](https://pay.google.com/business/console) completa el perfil de negocio y entra a
+   **Google Wallet API**. Copia el **Issuer ID** (número largo) → `GOOGLE_WALLET_ISSUER_ID`.
+2. *Usuarios* → **Invitar a un usuario** → el correo de la cuenta de servicio (`GOOGLE_SA_EMAIL`) con acceso **Desarrollador**.
+   Sin este paso Google rechaza los pases.
+3. En Render agrega `GOOGLE_WALLET_ISSUER_ID`, `GOOGLE_SA_EMAIL` y `GOOGLE_SA_PRIVATE_KEY` → **Save, rebuild, and deploy**.
+
+### 2.5 Probar y publicar
+1. En el panel, *Resumen → Estado de billeteras*: Google Wallet debe decir **Activo**.
+2. Desde un **Android** con la cuenta de Google con la que entras a la Wallet Console, abre tu página de inscripción y pulsa
+   "Agregar a Google Wallet". En **modo demo** solo pueden guardar pases las cuentas con acceso a la consola o agregadas como
+   cuentas de prueba.
+3. Cuando funcione, en la consola pide **acceso de publicación** (*Request publishing access*). Google revisa la clase de un
+   negocio como ejemplo; al aprobarlo, cualquier persona puede guardar pases.
 
 Notas:
 - Cada negocio tiene su propia `LoyaltyClass` (`<issuer>.loyalty_<id>`); se crea/actualiza sola al guardar el diseño o el programa.
