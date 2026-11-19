@@ -78,23 +78,21 @@ Mientras falte alguna integración, la plataforma funciona igual con la tarjeta 
      política `iam.disableServiceAccountKeyCreation`. Un administrador debe desactivarla para este proyecto en
      *IAM y administración → Políticas de la organización*, o usa un proyecto creado con una cuenta personal de Gmail.
 
-### 2.3 Variables para Render
-En la Mac, desde la carpeta donde quedó el JSON (`plutil` viene con macOS):
+### 2.3 Variable para Render
+Copia el archivo JSON completo en base64 (en la Mac, desde Terminal; cambia el nombre por el de tu archivo):
 ```bash
-plutil -extract client_email raw -o - ARCHIVO.json
+base64 -i ~/Downloads/NOMBRE-DEL-ARCHIVO.json | tr -d '\n' | pbcopy
 ```
-→ `GOOGLE_SA_EMAIL` (termina en `.iam.gserviceaccount.com`).
-```bash
-plutil -extract private_key raw -o - ARCHIVO.json | base64 | tr -d '\n' | pbcopy
-```
-→ pega en `GOOGLE_SA_PRIVATE_KEY` (queda en el portapapeles; no se muestra en pantalla).
+Pégalo en Render como `GOOGLE_SA_JSON` (queda en el portapapeles; no se muestra en pantalla). La app toma de ahí el correo
+y la llave de la cuenta de servicio. (También acepta `GOOGLE_SA_EMAIL` + `GOOGLE_SA_PRIVATE_KEY` por separado.)
 
 ### 2.4 Google Pay & Wallet Console
 1. En la [Google Pay & Wallet Console](https://pay.google.com/business/console) completa el perfil de negocio y entra a
    **Google Wallet API**. Copia el **Issuer ID** (número largo) → `GOOGLE_WALLET_ISSUER_ID`.
-2. *Usuarios* → **Invitar a un usuario** → el correo de la cuenta de servicio (`GOOGLE_SA_EMAIL`) con acceso **Desarrollador**.
+2. *Usuarios* → **Invitar a un usuario** → el correo de la cuenta de servicio (el `client_email` del JSON, termina en
+   `.iam.gserviceaccount.com`; también aparece en Google Cloud → Cuentas de servicio) con acceso **Desarrollador**.
    Sin este paso Google rechaza los pases.
-3. En Render agrega `GOOGLE_WALLET_ISSUER_ID`, `GOOGLE_SA_EMAIL` y `GOOGLE_SA_PRIVATE_KEY` → **Save, rebuild, and deploy**.
+3. En Render agrega `GOOGLE_WALLET_ISSUER_ID` y `GOOGLE_SA_JSON` → **Save, rebuild, and deploy**.
 
 ### 2.5 Probar y publicar
 1. En el panel, *Resumen → Estado de billeteras*: Google Wallet debe decir **Activo**.

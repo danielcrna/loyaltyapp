@@ -15,6 +15,20 @@ export function readPem(name: string): string | undefined {
   return Buffer.from(raw, "base64").toString("utf8");
 }
 
+/** Lee el JSON de la cuenta de servicio de Google desde GOOGLE_SA_JSON (texto JSON o base64). */
+function serviceAccountJson(): { client_email?: string; private_key?: string } | undefined {
+  const raw = env("GOOGLE_SA_JSON");
+  if (!raw) return undefined;
+  try {
+    const text = raw.trim().startsWith("{") ? raw : Buffer.from(raw.trim(), "base64").toString("utf8");
+    const json = JSON.parse(text);
+    return { client_email: json.client_email, private_key: json.private_key };
+  } catch {
+    console.error("[config] GOOGLE_SA_JSON no es un JSON válido (ni en texto ni en base64)");
+    return undefined;
+  }
+}
+
 export const config = {
   appName: env("NEXT_PUBLIC_APP_NAME") ?? "Lealt.io",
   appUrl: (env("APP_URL") ?? "http://localhost:3000").replace(/\/$/, ""),
@@ -43,10 +57,14 @@ export const config = {
 
   google: {
     issuerId: env("GOOGLE_WALLET_ISSUER_ID"),
-    serviceAccountEmail: env("GOOGLE_SA_EMAIL"),
-    privateKey: () => readPem("GOOGLE_SA_PRIVATE_KEY"),
+    // Se puede configurar con GOOGLE_SA_EMAIL + GOOGLE_SA_PRIVATE_KEY, o pegando el archivo JSON completo
+    // de la cuenta de servicio en GOOGLE_SA_JSON (tal cual o en base64).
+    get serviceAccountEmail(): string | undefined {
+      return env("GOOGLE_SA_EMAIL") ?? serviceAccountJson()?.client_email;
+    },
+    privateKey: (): string | undefined => readPem("GOOGLE_SA_PRIVATE_KEY") ?? serviceAccountJson()?.private_key,
     get enabled() {
-      return Boolean(this.issuerId && this.serviceAccountEmail && env("GOOGLE_SA_PRIVATE_KEY"));
+      return Boolean(this.issuerId && this.serviceAccountEmail && this.privateKey());
     },
   },
 

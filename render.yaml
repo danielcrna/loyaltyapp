@@ -34,7 +34,5 @@ services:
       # Google Wallet
       - key: GOOGLE_WALLET_ISSUER_ID
         sync: false
-      - key: GOOGLE_SA_EMAIL
-        sync: false
-      - key: GOOGLE_SA_PRIVATE_KEY
-        sync: false
+      - key: GOOGLE_SA_JSON
+        sync: false # archivo JSON de la cuenta de servicio en base64
